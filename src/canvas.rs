@@ -1,4 +1,5 @@
 use sdl2::{Sdl, VideoSubsystem};
+use sdl2::event::{Event, WindowEvent};
 use sdl2::rect::Rect as SdlRect;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::surface::Surface;
@@ -14,7 +15,7 @@ use gl::types::*;
 
 use rusttype::{point, Font, Scale, PositionedGlyph};
 
-use super::types::{Rect, Color};
+use super::types::{Rect, Color, Point};
 
 const VS_SRC_2D: &[u8] = b"
 #version 330 core
@@ -324,6 +325,7 @@ struct FontCacheEntry {
 impl Eq for FontCacheKey {}
 
 pub struct Canvas<'a> {
+    sdl: Sdl,
     pub char_width: i32,
     pub font_size: i32,
     window_width: i32,
@@ -336,12 +338,22 @@ pub struct Canvas<'a> {
     program_text: u32,
     program_texture: u32,
     uniforms: Uniforms,
+
+    pub mouse: Point,
+    pub scroll: Point,
+    pub mouse_left_down: bool,
+    pub mouse_left_pressed: bool,
+    pub mouse_right_down: bool,
+    pub mouse_right_pressed: bool,
+    pub should_quit: bool,
 }
 
 impl<'a> Canvas<'a> {
 
-    pub fn new(sdl_context: &mut Sdl, font_path: &str, font_size: u16) -> Self {
-        let video_subsys = sdl_context.video().unwrap();
+
+    pub fn new(font_path: &str, font_size: u16) -> Self {
+        let mut sdl = sdl2::init().unwrap();
+        let video_subsys = sdl.video().unwrap();
         let window = video_subsys
             .window("SDL2_TTF Example", 800, 600)
             .position_centered()
@@ -386,6 +398,7 @@ impl<'a> Canvas<'a> {
         };
 
         Self {
+            sdl,
             char_width,
             font_size: font_size as i32,
             window_width: 800,
@@ -398,7 +411,38 @@ impl<'a> Canvas<'a> {
             program_text,
             program_texture,
             uniforms,
+            mouse: Point::new(0, 0),
+            scroll: Point::new(0, 0),
+            mouse_left_down: false,
+            mouse_left_pressed: false,
+            mouse_right_down: false,
+            mouse_right_pressed: false,
+            should_quit: false,
         }
+    }
+
+    pub fn update(&mut self) {
+        self.scroll.x = 0;
+        self.scroll.y = 0;
+        self.mouse_left_pressed = false;
+        self.mouse_right_pressed = false;
+        for event in self.sdl.event_pump().unwrap().poll_iter() {
+            match event {
+                Event::Quit { .. } => self.should_quit = true,
+                Event::Window { win_event, .. } => {
+                    match win_event {
+                        WindowEvent::Resized(width, height) => self.resize(width, height),
+                        _ => (),
+                    }
+                }
+                Event::MouseWheel { x, y, .. } => {
+                    self.scroll.x += x * 10;
+                    self.scroll.y += y * 10;
+                }
+                _ => (),
+            }
+        }
+        // TODO
     }
 
     pub fn clear(&self, color: Color) {

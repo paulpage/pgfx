@@ -1,34 +1,22 @@
-use sdl2::event::{Event, WindowEvent};
 use pgfx::canvas::Canvas;
 use pgfx::types::{Rect, Color};
 
 fn main() {
-    let mut sdl = sdl2::init().unwrap();
-    // TODO don't use hard coded font
-    let mut canvas = Canvas::new(&mut sdl, "/usr/share/fonts/TTF/DejaVuSans.ttf", 32);
 
+    let mut app = Canvas::new("/usr/share/fonts/TTF/DejaVuSans.ttf", 32);
     let background_color = Color::new(0, 100, 0, 255);
+    let mut scroll_offset = 0;
 
-    'mainloop: loop {
-        for event in sdl.event_pump().unwrap().poll_iter() {
-            match event {
-                Event::Quit { .. } => break 'mainloop,
-                Event::Window { win_event, .. } => {
-                    match win_event {
-                        WindowEvent::Resized(width, height) => {
-                            canvas.resize(width, height);
-                        }
-                        _ => (),
-                    }
-                }
-                _ => (),
-            }
-        }
-        canvas.clear(background_color);
+    while !app.should_quit {
+        app.update();
 
-        canvas.draw_rect(Rect::new(5, 5, 20, 30), Color::new(100, 0, 0, 255));
-        canvas.draw_text("Hello World!", 30, 30, 20.0, Color::new(0, 0, 100, 255));
+        scroll_offset += app.scroll.y;
 
-        canvas.present();
+        app.clear(background_color);
+
+        app.draw_rect(Rect::new(5, 5 + scroll_offset, 20, 30), Color::new(100, 0, 0, 255));
+        app.draw_text("Hello World!", 30, 30 + scroll_offset, 20.0, Color::new(0, 0, 100, 255));
+
+        app.present();
     }
 }
