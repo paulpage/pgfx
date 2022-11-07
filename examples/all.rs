@@ -1,4 +1,4 @@
-use pgfx::canvas::Canvas;
+use pgfx::canvas::{Canvas, Texture};
 use pgfx::types::{Rect, Color};
 
 fn main() {
@@ -6,6 +6,7 @@ fn main() {
     let mut app = Canvas::new("/usr/share/fonts/TTF/DejaVuSans.ttf", 32);
     let background_color = Color::new(0, 100, 0, 255);
     let mut scroll_offset = 0;
+    let texture = Texture::from_file("/usr/share/icons/hicolor/128x128/apps/firefox.png").unwrap();
 
     while !app.should_quit {
         app.update();
@@ -16,6 +17,8 @@ fn main() {
 
         app.draw_rect(Rect::new(5, 5 + scroll_offset, 20, 30), Color::new(100, 0, 0, 255));
         app.draw_text("Hello World!", 30, 30 + scroll_offset, 20.0, Color::new(0, 0, 100, 255));
+
+        app.draw_texture(&texture, Rect::new(0, 0, 128, 128), Rect::new(5, 5, 128, 128));
 
         app.present();
     }

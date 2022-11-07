@@ -3,7 +3,7 @@ use sdl2::event::{Event, WindowEvent};
 use sdl2::rect::Rect as SdlRect;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::surface::Surface;
-use sdl2::render::{Texture, TextureQuery, WindowCanvas};
+use sdl2::render::{Texture as SdlTexture, TextureQuery, WindowCanvas};
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -12,6 +12,7 @@ use std::ffi::CString;
 use std::{ptr, mem};
 use cgmath::{Matrix4, Vector2, Deg, Vector3, Point3, SquareMatrix, Vector4};
 use gl::types::*;
+use stb_image::{self, image::LoadResult};
 
 use rusttype::{point, Font, Scale, PositionedGlyph};
 
@@ -158,6 +159,26 @@ void main() {
     f_color = texture(tex, v_tex_coords);
 }
 \0";
+
+pub struct Texture {
+    pub width: usize,
+    pub height: usize,
+    pub data: Vec<u8>,
+}
+
+impl Texture {
+    pub fn from_file(path: &str) -> Result<Texture, String> {
+        let result = stb_image::image::load(path);
+        if let LoadResult::ImageU8(image) = result {
+            return Ok(Texture {
+                width: image.width,
+                height: image.height,
+                data: image.data,
+            });
+        };
+        Err("Failed to load texture".to_string())
+    }
+}
 
 pub struct Camera {
     pub focus: Point3<f32>,
@@ -317,7 +338,7 @@ struct FontCacheKey {
 }
 
 struct FontCacheEntry {
-    texture: Texture,
+    texture: SdlTexture,
     w: i32,
     h: i32,
 }
@@ -628,7 +649,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    pub fn draw_texture(&self, src_rect: Rect, dest_rect: Rect, buffer: Vec<u8>) {
+    pub fn draw_texture(&self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
         let x = dest_rect.x as f32 * 2.0 / self.window_width as f32 - 1.0;
         let y = 1.0 - dest_rect.y as f32 * 2.0 / self.window_height as f32;
         let src_width = src_rect.width as usize;
@@ -659,7 +680,7 @@ impl<'a> Canvas<'a> {
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
-                buffer.as_ptr() as *const _
+                texture.data.as_ptr() as *const _
             );
             let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
 
