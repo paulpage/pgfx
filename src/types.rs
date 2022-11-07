@@ -53,8 +53,8 @@ impl Rect {
     }
 
     pub fn has_intersection(&self, other: Rect) -> bool {
-        (self.x <= other.x + other.width as i32 && self.x + self.width as i32 >= other.x
-         && self.y <= other.y + other.height as i32 && self.y + self.height as i32 >= other.y)
+        self.x <= other.x + other.width as i32 && self.x + self.width as i32 >= other.x
+         && self.y <= other.y + other.height as i32 && self.y + self.height as i32 >= other.y
     }
 
     pub fn intersection(&self, other: Rect) -> Rect {

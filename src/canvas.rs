@@ -1,8 +1,5 @@
 use sdl2::{Sdl, VideoSubsystem};
 use sdl2::event::{Event, WindowEvent};
-use sdl2::rect::Rect as SdlRect;
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::surface::Surface;
 use sdl2::render::{Texture as SdlTexture, TextureQuery, WindowCanvas};
 use std::cmp::{max, min};
 use std::collections::HashMap;
@@ -264,7 +261,7 @@ fn unproject(source: Vector3<f32>, view: Matrix4<f32>, proj: Matrix4<f32>) -> Ve
 }
 
 fn get_mouse_ray(aspect_ratio: f32, mouse_position: Vector2<f32>, camera: &Camera) -> (Point3<f32>, Vector3<f32>) {
-    let view = Matrix4::look_at(camera.position(), camera.focus, Vector3::new(0.0, 1.0, 0.0));
+    let view = Matrix4::look_at_rh(camera.position(), camera.focus, Vector3::new(0.0, 1.0, 0.0));
     let proj = cgmath::perspective(Deg(camera.fovy), aspect_ratio, 0.01, 100.0);
     let near = unproject(Vector3::new(mouse_position.x, mouse_position.y, 0.0), view, proj);
     let far = unproject(Vector3::new(mouse_position.x, mouse_position.y, 1.0), view, proj);
@@ -652,8 +649,6 @@ impl<'a> Canvas<'a> {
     pub fn draw_texture(&self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
         let x = dest_rect.x as f32 * 2.0 / self.window_width as f32 - 1.0;
         let y = 1.0 - dest_rect.y as f32 * 2.0 / self.window_height as f32;
-        let src_width = src_rect.width as usize;
-        let src_height = src_rect.height as usize;
 
         // Load the texture from the buffer
         let (uniform, mut id) = unsafe {
@@ -675,8 +670,8 @@ impl<'a> Canvas<'a> {
                 gl::TEXTURE_2D,
                 0,
                 gl::RGBA as GLint,
-                src_width as GLint,
-                src_height as GLint,
+                texture.width as GLint,
+                texture.height as GLint,
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
@@ -690,14 +685,18 @@ impl<'a> Canvas<'a> {
         let dest_width = dest_rect.width as f32 * 2.0 / self.window_width as f32;
         let dest_height = dest_rect.height as f32 * 2.0 / self.window_height as f32;
         let y = y - dest_height;
+        let u0 = src_rect.x as f32 / texture.width as f32;
+        let u1 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
+        let v0 = src_rect.y as f32 / texture.height as f32;
+        let v1 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
 
         let vertices = [
-            x, y, 0.0, 1.0,
-            x + dest_width, y, 1.0, 1.0,
-            x + dest_width, y + dest_height, 1.0, 0.0,
-            x, y, 0.0, 1.0,
-            x + dest_width, y + dest_height, 1.0, 0.0,
-            x, y + dest_height, 0.0, 0.0,
+            x, y, u0, v1,
+            x + dest_width, y, u1, v1,
+            x + dest_width, y + dest_height, u1, v0,
+            x, y, u0, v1,
+            x + dest_width, y + dest_height, u1, v0,
+            x, y + dest_height, u0, v0,
         ];
 
         let (mut vao, mut vbo) = (0, 0);
