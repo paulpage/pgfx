@@ -15,7 +15,20 @@ fn main() {
 
         app.clear(background_color);
 
-        app.draw_rect(Rect::new(5, 5 + scroll_offset, 20, 30), Color::new(100, 0, 0, 255));
+        if app.mouse_left_pressed {
+            println!("hello left");
+        }
+        if app.mouse_left_down {
+            app.draw_rect(Rect::new(10, 0, 10, 10), Color::new(0, 0, 100, 255));
+        }
+        if app.mouse_right_down {
+            app.draw_rect(Rect::new(20, 0, 10, 10), Color::new(0, 0, 100, 255));
+        }
+        if app.mouse_right_pressed {
+            println!("hello right");
+        }
+
+        app.draw_rect(Rect::new(app.mouse.x, app.mouse.y + scroll_offset, 20, 30), Color::new(100, 0, 0, 255));
         app.draw_text("Hello World!", 30, 30 + scroll_offset, 20.0, Color::new(0, 0, 100, 255));
 
         app.draw_texture(&texture, Rect::new(64, 64, 64, 64), Rect::new(5, 5, 128, 128));

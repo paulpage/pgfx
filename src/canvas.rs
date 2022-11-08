@@ -1,7 +1,7 @@
-use sdl2::{Sdl, VideoSubsystem};
+use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
-use sdl2::render::{Texture as SdlTexture, TextureQuery, WindowCanvas};
-use std::cmp::{max, min};
+use sdl2::render::{Texture as SdlTexture, WindowCanvas};
+use sdl2::mouse::MouseButton;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
@@ -456,6 +456,38 @@ impl<'a> Canvas<'a> {
                 Event::MouseWheel { x, y, .. } => {
                     self.scroll.x += x * 10;
                     self.scroll.y += y * 10;
+                }
+                Event::MouseMotion { x, y, .. } => {
+                    self.mouse.x = x;
+                    self.mouse.y = y;
+                }
+                Event::MouseButtonUp { mouse_btn, .. } => {
+                    match mouse_btn {
+                        MouseButton::Left => {
+                            self.mouse_left_down = false;
+                        }
+                        MouseButton::Right => {
+                            self.mouse_right_down = false;
+                        }
+                        _ => ()
+                        // MouseButton::Middle => {
+                        // }
+                    }
+                }
+                Event::MouseButtonDown { mouse_btn, .. } => {
+                    match mouse_btn {
+                        MouseButton::Left => {
+                            self.mouse_left_pressed = true;
+                            self.mouse_left_down = true;
+                        }
+                        MouseButton::Right => {
+                            self.mouse_right_pressed = true;
+                            self.mouse_right_down = true;
+                        }
+                        _ => ()
+                        // MouseButton::Middle => {
+                        // }
+                    }
                 }
                 _ => (),
             }
