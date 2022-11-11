@@ -346,8 +346,8 @@ pub struct Canvas<'a> {
     sdl: Sdl,
     pub char_width: i32,
     pub font_size: i32,
-    window_width: i32,
-    window_height: i32,
+    pub window_width: u32,
+    pub window_height: u32,
     pub font: Font<'a>,
     font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
     canvas: WindowCanvas,
@@ -363,6 +363,8 @@ pub struct Canvas<'a> {
     pub mouse_left_pressed: bool,
     pub mouse_right_down: bool,
     pub mouse_right_pressed: bool,
+    pub mouse_middle_down: bool,
+    pub mouse_middle_pressed: bool,
     pub should_quit: bool,
 }
 
@@ -370,7 +372,7 @@ impl<'a> Canvas<'a> {
 
 
     pub fn new(font_path: &str, font_size: u16) -> Self {
-        let mut sdl = sdl2::init().unwrap();
+        let sdl = sdl2::init().unwrap();
         let video_subsys = sdl.video().unwrap();
         let window = video_subsys
             .window("SDL2_TTF Example", 800, 600)
@@ -383,7 +385,7 @@ impl<'a> Canvas<'a> {
         let canvas: WindowCanvas = window.into_canvas().build().unwrap();
         
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
-        canvas.window().gl_set_context_to_current();
+        canvas.window().gl_set_context_to_current().unwrap();
 
         unsafe {
             gl::Enable(gl::BLEND);
@@ -435,6 +437,8 @@ impl<'a> Canvas<'a> {
             mouse_left_pressed: false,
             mouse_right_down: false,
             mouse_right_pressed: false,
+            mouse_middle_down: false,
+            mouse_middle_pressed: false,
             should_quit: false,
         }
     }
@@ -444,12 +448,13 @@ impl<'a> Canvas<'a> {
         self.scroll.y = 0;
         self.mouse_left_pressed = false;
         self.mouse_right_pressed = false;
+        self.mouse_middle_pressed = false;
         for event in self.sdl.event_pump().unwrap().poll_iter() {
             match event {
                 Event::Quit { .. } => self.should_quit = true,
                 Event::Window { win_event, .. } => {
                     match win_event {
-                        WindowEvent::Resized(width, height) => self.resize(width, height),
+                        WindowEvent::Resized(width, height) => self.resize(width as u32, height as u32),
                         _ => (),
                     }
                 }
@@ -469,9 +474,10 @@ impl<'a> Canvas<'a> {
                         MouseButton::Right => {
                             self.mouse_right_down = false;
                         }
+                        MouseButton::Middle => {
+                            self.mouse_middle_down = false;
+                        }
                         _ => ()
-                        // MouseButton::Middle => {
-                        // }
                     }
                 }
                 Event::MouseButtonDown { mouse_btn, .. } => {
@@ -484,9 +490,11 @@ impl<'a> Canvas<'a> {
                             self.mouse_right_pressed = true;
                             self.mouse_right_down = true;
                         }
+                        MouseButton::Middle => {
+                            self.mouse_middle_pressed = true;
+                            self.mouse_middle_down = true;
+                        }
                         _ => ()
-                        // MouseButton::Middle => {
-                        // }
                     }
                 }
                 _ => (),
@@ -570,11 +578,11 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    pub fn resize(&mut self, width: i32, height: i32) {
+    pub fn resize(&mut self, width: u32, height: u32) {
         self.window_width = width;
         self.window_height = height;
         unsafe {
-            gl::Viewport(0, 0, width, height);
+            gl::Viewport(0, 0, width as i32, height as i32);
         }
     }
 
@@ -927,12 +935,6 @@ impl<'a> Canvas<'a> {
     // pub fn set_active_region(&mut self, rect: Rect) {
     //     self.rect = rect;
     // }
-
-    pub fn window_size(&self) -> (i32, i32) {
-        // TODO do we need this function?
-        // TODO update this either with events or a central update function
-        (self.window_width, self.window_height)
-    }
 
     pub fn present(&mut self) {
         self.canvas.present();

@@ -15,11 +15,12 @@ fn main() {
     while !app.should_quit {
         app.update();
 
-        if app.mouse_left_pressed {
+        if app.mouse_middle_pressed {
+            println!("Hello middle");
             drag_offset = app.mouse - pos;
         }
 
-        if app.mouse_left_down {
+        if app.mouse_middle_down {
             pos = app.mouse - drag_offset;
         }
 
