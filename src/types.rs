@@ -1,5 +1,7 @@
 use std::cmp::{min, max};
+use std::ops;
 
+#[derive(Debug, Copy, Clone)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
@@ -11,6 +13,20 @@ impl Point {
             x,
             y,
         }
+    }
+}
+
+impl ops::Add<Self> for Point {
+    type Output = Self;
+    fn add(self, _rhs: Self) -> Self {
+        Point { x: self.x + _rhs.x, y: self.y + _rhs.y }
+    }
+}
+
+impl ops::Sub<Self> for Point {
+    type Output = Self;
+    fn sub(self, _rhs: Self) -> Self {
+        Point { x: self.x - _rhs.x, y: self.y - _rhs.y }
     }
 }
 
