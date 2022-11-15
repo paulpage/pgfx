@@ -516,11 +516,50 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    pub fn draw_rect(&self, rect: Rect, color: Color) {
-        let x = rect.x as f32 * 2.0 / self.window_width as f32 - 1.0;
-        let y = 1.0 - rect.y as f32 * 2.0 / self.window_height as f32;
-        let width = rect.width as f32 * 2.0 / self.window_width as f32;
-        let height = -1.0 * rect.height as f32 * 2.0 / self.window_height as f32;
+    pub fn draw_rotated_rect(&self, rect: Rect, color: Color, origin: Point, rotation: f32) {
+
+        let x = rect.x as f32;
+        let y = rect.y as f32;
+        let width = rect.width as f32;
+        let height =  rect.height as f32;
+        let dx = -origin.x as f32;
+        let dy = -origin.y as f32;
+
+        let (x1, y1, x2, y2, x3, y3, x4, y4) = if rotation == 0.0 {
+            let x = x + dx;
+            let y = y + dy;
+            (
+                x, y,
+                x + width, y,
+                x, y + height,
+                x + width, y + height,
+            )
+        } else {
+            let rcos = rotation.cos();
+            let rsin = rotation.sin();
+            (
+                x + dx*rcos - dy*rsin,
+                y + dx*rsin + dy*rcos,
+                x + (dx + width)*rcos - dy*rsin,
+                y + (dx + width)*rsin + dy*rcos,
+                x + dx*rcos - (dy + height)*rsin,
+                y + dx*rsin + (dy + height)*rcos,
+                x + (dx + width)*rcos - (dy + height)*rsin,
+                y + (dx + width)*rsin + (dy + height)*rcos,
+            )
+        };
+
+        let (x1, x2, x3, x4, y1, y2, y3, y4) = (
+            x1 * 2.0 / self.window_width as f32 - 1.0,
+            x2 * 2.0 / self.window_width as f32 - 1.0,
+            x3 * 2.0 / self.window_width as f32 - 1.0,
+            x4 * 2.0 / self.window_width as f32 - 1.0,
+            1.0 - y1 * 2.0 / self.window_height as f32,
+            1.0 - y2 * 2.0 / self.window_height as f32,
+            1.0 - y3 * 2.0 / self.window_height as f32,
+            1.0 - y4 * 2.0 / self.window_height as f32,
+        );
+
         let color = [
             color.r as f32 / 255.0,
             color.g as f32 / 255.0,
@@ -530,12 +569,12 @@ impl<'a> Canvas<'a> {
 
         let (mut vao_2d, mut vbo_2d) = (0, 0);
         let vertices = [
-            x, y, color[0], color[1], color[2], color[3],
-            x + width, y, color[0], color[1], color[2], color[3],
-            x + width, y + height, color[0], color[1], color[2], color[3],
-            x, y, color[0], color[1], color[2], color[3],
-            x + width, y + height, color[0], color[1], color[2], color[3],
-            x, y + height, color[0], color[1], color[2], color[3], 
+            x1, y1, color[0], color[1], color[2], color[3],
+            x2, y2, color[0], color[1], color[2], color[3],
+            x4, y4, color[0], color[1], color[2], color[3],
+            x1, y1, color[0], color[1], color[2], color[3],
+            x4, y4, color[0], color[1], color[2], color[3],
+            x3, y3, color[0], color[1], color[2], color[3],
         ];
         unsafe {
             gl::Disable(gl::DEPTH_TEST);
@@ -568,6 +607,10 @@ impl<'a> Canvas<'a> {
             gl::DeleteVertexArrays(1, &mut vao_2d);
             gl::DeleteBuffers(1, &mut vbo_2d);
         }
+    }
+
+    pub fn draw_rect(&self, rect: Rect, color: Color) {
+        self.draw_rotated_rect(rect, color, Point::new(0, 0), 0.0);
     }
 
     // TODO remove this function, figure out what we want to do with drawing 2d
