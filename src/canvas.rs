@@ -10,6 +10,7 @@ use std::{ptr, mem};
 use cgmath::{Matrix4, Vector2, Deg, Vector3, Point3, SquareMatrix, Vector4};
 use gl::types::*;
 use stb_image::{self, image::LoadResult};
+use std::time::{Duration, Instant};
 
 use rusttype::{point, Font, Scale, PositionedGlyph};
 
@@ -366,6 +367,9 @@ pub struct Canvas<'a> {
     pub mouse_middle_down: bool,
     pub mouse_middle_pressed: bool,
     pub should_quit: bool,
+
+    rect_buffer: u32,
+    rect_vertices: Vec<f32>,
 }
 
 impl<'a> Canvas<'a> {
@@ -417,6 +421,11 @@ impl<'a> Canvas<'a> {
             }
         };
 
+        let mut rect_buffer = 0;
+        unsafe {
+            gl::GenBuffers(1, &mut rect_buffer);
+        }
+
         Self {
             sdl,
             char_width,
@@ -440,6 +449,8 @@ impl<'a> Canvas<'a> {
             mouse_middle_down: false,
             mouse_middle_pressed: false,
             should_quit: false,
+            rect_buffer,
+            rect_vertices: Vec::new(),
         }
     }
 
@@ -567,7 +578,6 @@ impl<'a> Canvas<'a> {
             color.a as f32 / 255.0,
         ];
 
-        let (mut vao_2d, mut vbo_2d) = (0, 0);
         let vertices = [
             x1, y1, color[0], color[1], color[2], color[3],
             x2, y2, color[0], color[1], color[2], color[3],
@@ -576,12 +586,13 @@ impl<'a> Canvas<'a> {
             x4, y4, color[0], color[1], color[2], color[3],
             x3, y3, color[0], color[1], color[2], color[3],
         ];
+        let (mut vao_2d, mut vbo_2d) = (0, 0);
         unsafe {
             gl::Disable(gl::DEPTH_TEST);
 
             gl::GenVertexArrays(1, &mut vao_2d);
             gl::GenBuffers(1, &mut vbo_2d);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo_2d);
+            gl::BindBuffer(gl::ARRAY_BUFFER, vao_2d);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
                 (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
@@ -611,6 +622,139 @@ impl<'a> Canvas<'a> {
 
     pub fn draw_rect(&self, rect: Rect, color: Color) {
         self.draw_rotated_rect(rect, color, Point::new(0, 0), 0.0);
+    }
+
+    pub fn draw_rects(&mut self, rects: &[Rect], colors: &[Color], rotations: &[f32]) {
+
+let mut start = Instant::now();
+
+        let needs_allocation = rects.len() * 36 != self.rect_vertices.len();
+
+        if needs_allocation {
+            println!("Allocating rect vertices");
+            self.rect_vertices = vec![0.0; rects.len() * 36];
+
+        }
+        // let mut vertices = vec![0.0; rects.len() * 36];
+
+        for i in 0..rects.len() {
+            let rect = rects[i];
+            let color = colors[i];
+            // TODO hack and wrong
+            let origin = Point::new(rect.width as i32, rect.height as i32);
+            let rotation = rotations[i];
+
+            let x = rect.x as f32;
+            let y = rect.y as f32;
+            let width = rect.width as f32;
+            let height =  rect.height as f32;
+            // TODO hack and wrong
+            let dx = -origin.x as f32 / 2.0;
+            let dy = -origin.y as f32 / 2.0;
+
+            let (x1, y1, x2, y2, x3, y3, x4, y4) = if rotation == 0.0 {
+                let x = x + dx;
+                let y = y + dy;
+                (
+                    x, y,
+                    x + width, y,
+                    x, y + height,
+                    x + width, y + height,
+                )
+            } else {
+                let rcos = rotation.cos();
+                let rsin = rotation.sin();
+                (
+                    x + dx*rcos - dy*rsin,
+                    y + dx*rsin + dy*rcos,
+                    x + (dx + width)*rcos - dy*rsin,
+                    y + (dx + width)*rsin + dy*rcos,
+                    x + dx*rcos - (dy + height)*rsin,
+                    y + dx*rsin + (dy + height)*rcos,
+                    x + (dx + width)*rcos - (dy + height)*rsin,
+                    y + (dx + width)*rsin + (dy + height)*rcos,
+                )
+            };
+
+            let (x1, x2, x3, x4, y1, y2, y3, y4) = (
+                x1 * 2.0 / self.window_width as f32 - 1.0,
+                x2 * 2.0 / self.window_width as f32 - 1.0,
+                x3 * 2.0 / self.window_width as f32 - 1.0,
+                x4 * 2.0 / self.window_width as f32 - 1.0,
+                1.0 - y1 * 2.0 / self.window_height as f32,
+                1.0 - y2 * 2.0 / self.window_height as f32,
+                1.0 - y3 * 2.0 / self.window_height as f32,
+                1.0 - y4 * 2.0 / self.window_height as f32,
+            );
+
+            let color = [
+                color.r as f32 / 255.0,
+                color.g as f32 / 255.0,
+                color.b as f32 / 255.0,
+                color.a as f32 / 255.0,
+            ];
+
+            let these_vertices = [
+                x1, y1,
+                x2, y2,
+                x4, y4,
+                x1, y1,
+                x4, y4,
+                x3, y3,
+            ];
+            
+            for j in 0..these_vertices.len() {
+                self.rect_vertices[i * 12 + j] = these_vertices[j];
+            }
+            if needs_allocation {
+                for j in 0..6 {
+                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 0] = color[0];
+                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 1] = color[1];
+                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 2] = color[2];
+                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 3] = color[3];
+                }
+            }
+        }
+
+        let mut vao_2d = 0;
+        unsafe {
+            gl::Disable(gl::DEPTH_TEST);
+
+            gl::GenVertexArrays(1, &mut vao_2d);
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.rect_buffer);
+            if !needs_allocation {
+                gl::BufferSubData(
+                    gl::ARRAY_BUFFER,
+                    0,
+                    (rects.len() * 12 * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    self.rect_vertices.as_ptr() as *const _,
+                );
+            } else {
+                gl::BufferData(
+                    gl::ARRAY_BUFFER,
+                    (self.rect_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    self.rect_vertices.as_ptr() as *const _,
+                    gl::STATIC_DRAW
+                );
+            }
+
+            gl::BindVertexArray(vao_2d);
+            gl::EnableVertexAttribArray(0);
+            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, 0, ptr::null());
+            gl::EnableVertexAttribArray(1);
+            gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, 0, (rects.len() * 12 * mem::size_of::<GLfloat>()) as *const _);
+
+            gl::UseProgram(self.program_2d);
+            gl::BindVertexArray(vao_2d);
+
+            gl::DrawArrays(gl::TRIANGLES, 0, self.rect_vertices.len() as GLsizei);
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+            gl::BindVertexArray(0);
+
+            gl::DeleteVertexArrays(1, &mut vao_2d);
+        }
+
     }
 
     // TODO remove this function, figure out what we want to do with drawing 2d
