@@ -16,148 +16,6 @@ use rusttype::{point, Font, Scale, PositionedGlyph};
 
 use super::types::{Rect, Color, Point};
 
-const VS_SRC_2D: &[u8] = b"
-#version 330 core
-
-layout (location = 0) in vec2 position;
-layout (location = 1) in vec4 color;
-
-out vec4 v_color;
-
-void main() {
-    v_color = color;
-    gl_Position = vec4(position, 0.0, 1.0);
-}
-\0";
-
-const FS_SRC_2D: &[u8] = b"
-#version 330 core
-
-in vec4 v_color;
-
-void main() {
-    gl_FragColor = v_color;
-}
-\0";
-
-const VS_SRC: &[u8] = b"
-#version 330 core
-
-layout (location = 0) in vec3 position;
-layout (location = 1) in vec3 normal;
-layout (location = 2) in vec4 color;
-
-uniform mat4 world;
-uniform mat4 view;
-uniform mat4 proj;
-
-out vec3 v_normal;
-out vec4 v_color;
-out vec3 fragment_position;
-
-void main() {
-    mat4 worldview = view * world;
-    v_normal = transpose(inverse(mat3(worldview))) * normal;
-    v_color = color;
-    // TODO check if world is correct to use below, original said model
-    fragment_position = vec3(world * vec4(position, 1.0));
-    // fragment_position = position;
-    gl_Position = proj * worldview * vec4(position, 1.0);
-}
-\0";
-
-const FS_SRC: &[u8] = b"
-#version 330 core
-
-in vec3 v_normal;
-in vec4 v_color;
-in vec3 fragment_position;
-
-struct Light {
-    vec3 position;
-    vec3 direction;
-
-    vec3 ambient;
-    vec3 diffuse;
-    vec3 specular;
-};
-
-uniform vec3 view_position;
-uniform Light light;
-
-// const vec3 LIGHT = vec3(1.0, 1.0, 1.0);
-
-void main() {
-
-    vec3 norm = normalize(v_normal);
-    vec3 light_direction = normalize(light.position - fragment_position);
-    vec3 view_direction = normalize(view_position - fragment_position);
-    vec3 reflection_direction = reflect(-light_direction, norm);
-
-    vec3 ambient = light.ambient; 
-    vec3 diffuse = light.diffuse * max(dot(norm, light_direction), 0.0);
-    vec3 specular = light.specular * pow(max(dot(view_direction, reflection_direction), 0.0), 32);
-
-    gl_FragColor = vec4((ambient + diffuse + specular), 1.0) * v_color;
-}
-\0";
-
-const VS_SRC_TEXT: &[u8] = b"
-#version 330 core
-
-layout (location = 0) in vec2 position;
-layout (location = 1) in vec2 tex_coords;
-layout (location = 2) in vec4 color;
-
-out vec2 v_tex_coords;
-out vec4 v_color;
-
-void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    v_tex_coords = tex_coords;
-    v_color = color;
-}
-\0";
-
-const FS_SRC_TEXT: &[u8] = b"
-#version 330 core
-
-uniform sampler2D tex;
-in vec2 v_tex_coords;
-in vec4 v_color;
-out vec4 f_color;
-
-void main() {
-    f_color = v_color * vec4(1.0, 1.0, 1.0, texture(tex, v_tex_coords).r);
-}
-\0";
-
-const VS_SRC_2D_TEXTURE: &[u8] = b"
-#version 330 core
-
-layout (location = 0) in vec2 position;
-layout (location = 1) in vec2 tex_coords;
-
-out vec2 v_tex_coords;
-
-void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    v_tex_coords = tex_coords;
-}
-\0";
-
-const FS_SRC_2D_TEXTURE: &[u8] = b"
-#version 330 core
-
-uniform sampler2D tex;
-in vec2 v_tex_coords;
-out vec4 f_color;
-
-void main() {
-    f_color = texture(tex, v_tex_coords);
-}
-\0";
-
 pub struct Texture {
     pub width: usize,
     pub height: usize,
@@ -270,13 +128,14 @@ fn get_mouse_ray(aspect_ratio: f32, mouse_position: Vector2<f32>, camera: &Camer
     (camera.position(), direction)
 }
 
-fn create_shader(shader_type: u32, source: &'static [u8]) -> u32 {
+fn create_shader(shader_type: u32, source: &str) -> u32 {
     unsafe {
         let id = gl::CreateShader(shader_type);
+        let source_cstr = CString::new(source).unwrap();
         gl::ShaderSource(
             id,
             1,
-            [source.as_ptr() as *const _].as_ptr(),
+            &source_cstr.as_ptr(),
             std::ptr::null()
         );
         gl::CompileShader(id);
@@ -298,8 +157,8 @@ fn create_shader(shader_type: u32, source: &'static [u8]) -> u32 {
 }
 
 fn create_program(
-    vertex_shader: &'static [u8],
-    fragment_shader: &'static [u8],
+    vertex_shader: &str,
+    fragment_shader: &str,
 ) -> u32 {
     let vs = create_shader(gl::VERTEX_SHADER, vertex_shader);
     let fs = create_shader(gl::FRAGMENT_SHADER, fragment_shader);
@@ -404,10 +263,10 @@ impl<'a> App<'a> {
             gl::Enable(gl::BLEND);
         }
 
-        let program = create_program(VS_SRC, FS_SRC);
-        let program_2d = create_program(VS_SRC_2D, FS_SRC_2D);
-        let program_text = create_program(VS_SRC_TEXT, FS_SRC_TEXT);
-        let program_texture = create_program(VS_SRC_2D_TEXTURE, FS_SRC_2D_TEXTURE);
+        let program = create_program(include_str!("shaders/3d.vert"), include_str!("shaders/3d.frag"));
+        let program_2d = create_program(include_str!("shaders/2d.vert"), include_str!("shaders/2d.frag"));
+        let program_text = create_program(include_str!("shaders/text.vert"), include_str!("shaders/text.frag"));
+        let program_texture = create_program(include_str!("shaders/texture.vert"), include_str!("shaders/texture.frag"));
 
         let font = {
             let data = std::fs::read(Path::new(font_path)).unwrap();
