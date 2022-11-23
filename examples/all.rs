@@ -1,4 +1,4 @@
-use pgfx::canvas::{Canvas, Texture};
+use pgfx::app::{App, Texture};
 use pgfx::types::{Rect, Color, Point};
 use std::time::{Duration, Instant};
 use rand::Rng;
@@ -20,7 +20,7 @@ fn main() {
 
     let mut rotations = vec![0.0; rect_count];
 
-    let mut app = Canvas::new("/usr/share/fonts/TTF/DejaVuSans.ttf", 32);
+    let mut app = App::new("/usr/share/fonts/TTF/DejaVuSans.ttf", 32);
     let background_color = Color::new(0, 100, 0, 255);
     let mut scroll_offset = 0;
     let texture = Texture::from_file("/usr/share/icons/hicolor/128x128/apps/firefox.png").unwrap();
