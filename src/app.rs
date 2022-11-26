@@ -2,6 +2,8 @@ use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::render::{Texture as SdlTexture, WindowCanvas};
 use sdl2::mouse::MouseButton;
+use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
+use sdl2::AudioSubsystem;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
@@ -20,8 +22,9 @@ use super::opengl::create_program;
 
 pub struct App<'a> {
     // SDL
-    sdl: Sdl,
+    pub sdl: Sdl,
     canvas: WindowCanvas,
+    audio_subsys: AudioSubsystem,
 
     // OpenGL
     program: u32,
@@ -70,6 +73,15 @@ impl<'a> App<'a> {
             .build()
             .unwrap();
         let canvas: WindowCanvas = window.into_canvas().build().unwrap();
+
+        let audio_subsys = sdl.audio().unwrap();
+        let _mixer_context = sdl2::mixer::init(InitFlag::OGG).unwrap();
+        let frequency = 44_100;
+        let format = AUDIO_S16LSB;
+        let channels = DEFAULT_CHANNELS;
+        let chunk_size = 1024;
+        sdl2::mixer::open_audio(frequency, format, channels, chunk_size).unwrap();
+        let result = sdl2::mixer::allocate_channels(8);
         
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
@@ -134,6 +146,8 @@ impl<'a> App<'a> {
             should_quit: false,
             rect_buffer,
             rect_vertices: Vec::new(),
+            // music,
+            audio_subsys,
         }
     }
 
@@ -960,4 +974,52 @@ impl<'a> App<'a> {
     //     self.draw_model(&vertices, world, view, proj, view_position, light);
     // }
 
+}
+
+// Audio ============================================================
+
+pub struct Music<'a> {
+    music: sdl2::mixer::Music<'a>,
+    paused: bool,
+}
+
+impl<'a> Music<'a> {
+    pub fn from_file(path: &str) -> Self {
+        Self {
+            music: sdl2::mixer::Music::from_file(path).unwrap(),
+            paused: false,
+        }
+    }
+
+    pub fn play(&self) {
+        self.music.play(-1).unwrap();
+    }
+
+    pub fn pause(&self) {
+        sdl2::mixer::Music::pause();
+    }
+
+    pub fn resume(&self) {
+        sdl2::mixer::Music::resume();
+    }
+
+    pub fn is_paused(&self) -> bool {
+        sdl2::mixer::Music::is_paused()
+    }
+}
+
+pub struct Sound {
+    chunk: sdl2::mixer::Chunk,
+}
+
+impl Sound {
+    pub fn from_file(path: &str) -> Self {
+        Self {
+            chunk: sdl2::mixer::Chunk::from_file(path).unwrap(),
+        }
+    }
+
+    pub fn play(&self) {
+        sdl2::mixer::Channel::all().play(&self.chunk, 0).unwrap();
+    }
 }

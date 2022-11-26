@@ -1,6 +1,7 @@
-use pgfx::app::{App, Texture};
+use pgfx::app::{App, Texture, Music, Sound};
 use pgfx::types::{Rect, Color, Point};
 use std::time::{Duration, Instant};
+use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 use rand::Rng;
 
 fn main() {
@@ -32,6 +33,12 @@ fn main() {
 
     let mut last_mouse = Point::new(0, 0);
     let mut mouse_delta = Point::new(0, 0);
+
+    let music = Music::from_file("spinning_rat.ogg");
+    let sound = Sound::from_file("/home/paul/pop.ogg");
+    let bark = Sound::from_file("/home/paul/bark.ogg");
+    music.play();
+    music.pause();
 
     while !app.should_quit {
 let very_start = Instant::now();
@@ -71,7 +78,9 @@ let start = Instant::now();
 
         if app.mouse_left_pressed {
             println!("hello left");
+            bark.play();
         }
+
         if app.mouse_left_down {
             app.draw_rect(Rect::new(10, 0, 10, 10), Color::new(0, 0, 100, 255));
         }
@@ -79,9 +88,13 @@ let start = Instant::now();
             app.draw_rect(Rect::new(20, 0, 10, 10), Color::new(0, 0, 100, 255));
             rotation += 0.02;
         }
+
         if app.mouse_right_pressed {
             println!("hello right");
-
+            music.resume();
+        }
+        if !app.mouse_right_down {
+            music.pause();
         }
 
         app.draw_rects(&rects, &colors, &rotations);
