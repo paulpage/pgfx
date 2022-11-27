@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
 
-use std::ffi::CString;
+use std::ffi::{CString, c_void};
 use std::{ptr, mem};
 use gl::types::*;
 use stb_image::{self, image::LoadResult};
@@ -18,7 +18,7 @@ use cgmath::{Matrix4, Vector2, Deg, Vector3, Point3, SquareMatrix, Vector4};
 use rusttype::{point, Font, Scale, PositionedGlyph};
 
 use super::types::{Rect, Color, Point};
-use super::opengl::create_program;
+use super::opengl::{create_program, debug_callback};
 
 pub struct App<'a> {
     // SDL
@@ -32,8 +32,9 @@ pub struct App<'a> {
     program_text: u32,
     program_texture: u32,
     uniforms: Uniforms,
-    rect_buffer: u32,
-    rect_vertices: Vec<f32>,
+    tri_buffer: u32,
+    tri_vertices: Vec<f32>,
+    last_tri_vertices_len: usize,
 
     // Window
     pub window_width: u32,
@@ -87,6 +88,8 @@ impl<'a> App<'a> {
         canvas.window().gl_set_context_to_current().unwrap();
 
         unsafe {
+            gl::Enable(gl::DEBUG_OUTPUT);
+            gl::DebugMessageCallback(Some(debug_callback), ptr::null());
             gl::Enable(gl::BLEND);
         }
 
@@ -115,10 +118,9 @@ impl<'a> App<'a> {
                 light_specular: gl::GetUniformLocation(program, b"light.specular\0".as_ptr() as *const _),
             }
         };
-
-        let mut rect_buffer = 0;
+        let mut tri_buffer = 0;
         unsafe {
-            gl::GenBuffers(1, &mut rect_buffer);
+            gl::GenBuffers(1, &mut tri_buffer);
         }
 
         Self {
@@ -144,18 +146,10 @@ impl<'a> App<'a> {
             mouse_middle_down: false,
             mouse_middle_pressed: false,
             should_quit: false,
-            rect_buffer,
-            rect_vertices: Vec::new(),
-            // music,
+            tri_buffer,
+            tri_vertices: Vec::new(),
+            last_tri_vertices_len: 0,
             audio_subsys,
-        }
-    }
-
-    // TODO remove this function, figure out what we want to do with drawing 2d
-    pub fn draw_2d(&self) {
-        unsafe {
-            // 2d
-            gl::BindVertexArray(0);
         }
     }
 
@@ -185,7 +179,51 @@ impl<'a> App<'a> {
     }
 
     pub fn present(&mut self) {
+
+        let mut vao_2d = 0;
+        unsafe {
+            gl::Disable(gl::DEPTH_TEST);
+
+            gl::GenVertexArrays(1, &mut vao_2d);
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.tri_buffer);
+            if self.tri_vertices.len() == self.last_tri_vertices_len {
+                gl::BufferSubData(
+                    gl::ARRAY_BUFFER,
+                    0,
+                    (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    self.tri_vertices.as_ptr() as *const _,
+                );
+            } else {
+                gl::BufferData(
+                    gl::ARRAY_BUFFER,
+                    (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    self.tri_vertices.as_ptr() as *const _,
+                    gl::DYNAMIC_DRAW
+                );
+            }
+
+            gl::BindVertexArray(vao_2d);
+            let stride = 6 * mem::size_of::<GLfloat>() as GLsizei;
+            gl::EnableVertexAttribArray(0);
+            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
+            gl::EnableVertexAttribArray(1);
+            gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
+
+            gl::UseProgram(self.program_2d);
+
+            gl::DrawArrays(gl::TRIANGLES, 0, self.tri_vertices.len() as GLsizei);
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+            gl::BindVertexArray(0);
+
+            gl::DeleteVertexArrays(1, &mut vao_2d);
+        }
+
+
         self.canvas.present();
+
+        self.last_tri_vertices_len = self.tri_vertices.len();
+        self.tri_vertices.clear();
     }
 }
 
@@ -256,51 +294,55 @@ impl<'a> App<'a> {
 
 // Shapes ============================================================
 
+fn get_rect_vertices(rect: Rect, origin: Point, rotation: f32, window_width: u32, window_height: u32) -> [f32; 8] {
+    let x = rect.x as f32;
+    let y = rect.y as f32;
+    let width = rect.width as f32;
+    let height =  rect.height as f32;
+    let dx = -origin.x as f32;
+    let dy = -origin.y as f32;
+
+    let (x1, y1, x2, y2, x3, y3, x4, y4) = if rotation == 0.0 {
+        let x = x + dx;
+        let y = y + dy;
+        (
+            x, y,
+            x + width, y,
+            x, y + height,
+            x + width, y + height,
+        )
+    } else {
+        let rcos = rotation.cos();
+        let rsin = rotation.sin();
+        (
+            x + dx*rcos - dy*rsin,
+            y + dx*rsin + dy*rcos,
+            x + (dx + width)*rcos - dy*rsin,
+            y + (dx + width)*rsin + dy*rcos,
+            x + dx*rcos - (dy + height)*rsin,
+            y + dx*rsin + (dy + height)*rcos,
+            x + (dx + width)*rcos - (dy + height)*rsin,
+            y + (dx + width)*rsin + (dy + height)*rcos,
+        )
+    };
+
+    [
+        x1 * 2.0 / window_width as f32 - 1.0,
+        x2 * 2.0 / window_width as f32 - 1.0,
+        x3 * 2.0 / window_width as f32 - 1.0,
+        x4 * 2.0 / window_width as f32 - 1.0,
+        1.0 - y1 * 2.0 / window_height as f32,
+        1.0 - y2 * 2.0 / window_height as f32,
+        1.0 - y3 * 2.0 / window_height as f32,
+        1.0 - y4 * 2.0 / window_height as f32,
+    ]
+}
+
 impl<'a> App<'a> {
 
-    pub fn draw_rotated_rect(&self, rect: Rect, color: Color, origin: Point, rotation: f32) {
+    pub fn draw_rotated_rect(&mut self, rect: Rect, color: Color, origin: Point, rotation: f32) {
 
-        let x = rect.x as f32;
-        let y = rect.y as f32;
-        let width = rect.width as f32;
-        let height =  rect.height as f32;
-        let dx = -origin.x as f32;
-        let dy = -origin.y as f32;
-
-        let (x1, y1, x2, y2, x3, y3, x4, y4) = if rotation == 0.0 {
-            let x = x + dx;
-            let y = y + dy;
-            (
-                x, y,
-                x + width, y,
-                x, y + height,
-                x + width, y + height,
-            )
-        } else {
-            let rcos = rotation.cos();
-            let rsin = rotation.sin();
-            (
-                x + dx*rcos - dy*rsin,
-                y + dx*rsin + dy*rcos,
-                x + (dx + width)*rcos - dy*rsin,
-                y + (dx + width)*rsin + dy*rcos,
-                x + dx*rcos - (dy + height)*rsin,
-                y + dx*rsin + (dy + height)*rcos,
-                x + (dx + width)*rcos - (dy + height)*rsin,
-                y + (dx + width)*rsin + (dy + height)*rcos,
-            )
-        };
-
-        let (x1, x2, x3, x4, y1, y2, y3, y4) = (
-            x1 * 2.0 / self.window_width as f32 - 1.0,
-            x2 * 2.0 / self.window_width as f32 - 1.0,
-            x3 * 2.0 / self.window_width as f32 - 1.0,
-            x4 * 2.0 / self.window_width as f32 - 1.0,
-            1.0 - y1 * 2.0 / self.window_height as f32,
-            1.0 - y2 * 2.0 / self.window_height as f32,
-            1.0 - y3 * 2.0 / self.window_height as f32,
-            1.0 - y4 * 2.0 / self.window_height as f32,
-        );
+        let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(rect, origin, rotation, self.window_width, self.window_height);
 
         let color = [
             color.r as f32 / 255.0,
@@ -309,180 +351,18 @@ impl<'a> App<'a> {
             color.a as f32 / 255.0,
         ];
 
-        let vertices = [
+        self.tri_vertices.extend_from_slice(&[
             x1, y1, color[0], color[1], color[2], color[3],
             x2, y2, color[0], color[1], color[2], color[3],
             x4, y4, color[0], color[1], color[2], color[3],
             x1, y1, color[0], color[1], color[2], color[3],
             x4, y4, color[0], color[1], color[2], color[3],
             x3, y3, color[0], color[1], color[2], color[3],
-        ];
-        let (mut vao_2d, mut vbo_2d) = (0, 0);
-        unsafe {
-            gl::Disable(gl::DEPTH_TEST);
-
-            gl::GenVertexArrays(1, &mut vao_2d);
-            gl::GenBuffers(1, &mut vbo_2d);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vao_2d);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                vertices.as_ptr() as *const _,
-                gl::STATIC_DRAW
-            );
-            gl::BindVertexArray(vao_2d);
-            let stride = 6 * mem::size_of::<GLfloat>() as GLsizei;
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
-
-            gl::UseProgram(self.program_2d);
-            gl::BindVertexArray(vao_2d);
-            gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-        }
-
-        unsafe {
-            gl::DeleteVertexArrays(1, &mut vao_2d);
-            gl::DeleteBuffers(1, &mut vbo_2d);
-        }
+        ]);
     }
 
-    pub fn draw_rect(&self, rect: Rect, color: Color) {
+    pub fn draw_rect(&mut self, rect: Rect, color: Color) {
         self.draw_rotated_rect(rect, color, Point::new(0, 0), 0.0);
-    }
-
-    pub fn draw_rects(&mut self, rects: &[Rect], colors: &[Color], rotations: &[f32]) {
-
-        let needs_allocation = rects.len() * 36 != self.rect_vertices.len();
-
-        if needs_allocation {
-            println!("Allocating rect vertices");
-            self.rect_vertices = vec![0.0; rects.len() * 36];
-
-        }
-
-        for i in 0..rects.len() {
-            let rect = rects[i];
-            let color = colors[i];
-            // TODO hack and wrong
-            let origin = Point::new(rect.width as i32, rect.height as i32);
-            let rotation = rotations[i];
-
-            let x = rect.x as f32;
-            let y = rect.y as f32;
-            let width = rect.width as f32;
-            let height =  rect.height as f32;
-            // TODO hack and wrong
-            let dx = -origin.x as f32 / 2.0;
-            let dy = -origin.y as f32 / 2.0;
-
-            let (x1, y1, x2, y2, x3, y3, x4, y4) = if rotation == 0.0 {
-                let x = x + dx;
-                let y = y + dy;
-                (
-                    x, y,
-                    x + width, y,
-                    x, y + height,
-                    x + width, y + height,
-                )
-            } else {
-                let rcos = rotation.cos();
-                let rsin = rotation.sin();
-                (
-                    x + dx*rcos - dy*rsin,
-                    y + dx*rsin + dy*rcos,
-                    x + (dx + width)*rcos - dy*rsin,
-                    y + (dx + width)*rsin + dy*rcos,
-                    x + dx*rcos - (dy + height)*rsin,
-                    y + dx*rsin + (dy + height)*rcos,
-                    x + (dx + width)*rcos - (dy + height)*rsin,
-                    y + (dx + width)*rsin + (dy + height)*rcos,
-                )
-            };
-
-            let (x1, x2, x3, x4, y1, y2, y3, y4) = (
-                x1 * 2.0 / self.window_width as f32 - 1.0,
-                x2 * 2.0 / self.window_width as f32 - 1.0,
-                x3 * 2.0 / self.window_width as f32 - 1.0,
-                x4 * 2.0 / self.window_width as f32 - 1.0,
-                1.0 - y1 * 2.0 / self.window_height as f32,
-                1.0 - y2 * 2.0 / self.window_height as f32,
-                1.0 - y3 * 2.0 / self.window_height as f32,
-                1.0 - y4 * 2.0 / self.window_height as f32,
-            );
-
-            let color = [
-                color.r as f32 / 255.0,
-                color.g as f32 / 255.0,
-                color.b as f32 / 255.0,
-                color.a as f32 / 255.0,
-            ];
-
-            let these_vertices = [
-                x1, y1,
-                x2, y2,
-                x4, y4,
-                x1, y1,
-                x4, y4,
-                x3, y3,
-            ];
-            
-            for j in 0..these_vertices.len() {
-                self.rect_vertices[i * 12 + j] = these_vertices[j];
-            }
-            if needs_allocation {
-                for j in 0..6 {
-                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 0] = color[0];
-                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 1] = color[1];
-                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 2] = color[2];
-                    self.rect_vertices[rects.len() * 12 + i * 24 + j * 4 + 3] = color[3];
-                }
-            }
-        }
-
-        let mut vao_2d = 0;
-        unsafe {
-            gl::Disable(gl::DEPTH_TEST);
-
-            gl::GenVertexArrays(1, &mut vao_2d);
-            gl::BindBuffer(gl::ARRAY_BUFFER, self.rect_buffer);
-            if !needs_allocation {
-                gl::BufferSubData(
-                    gl::ARRAY_BUFFER,
-                    0,
-                    (rects.len() * 12 * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                    self.rect_vertices.as_ptr() as *const _,
-                );
-            } else {
-                gl::BufferData(
-                    gl::ARRAY_BUFFER,
-                    (self.rect_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                    self.rect_vertices.as_ptr() as *const _,
-                    gl::STATIC_DRAW
-                );
-            }
-
-            gl::BindVertexArray(vao_2d);
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, 0, ptr::null());
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, 0, (rects.len() * 12 * mem::size_of::<GLfloat>()) as *const _);
-
-            gl::UseProgram(self.program_2d);
-            gl::BindVertexArray(vao_2d);
-
-            gl::DrawArrays(gl::TRIANGLES, 0, self.rect_vertices.len() as GLsizei);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-
-            gl::DeleteVertexArrays(1, &mut vao_2d);
-        }
-
     }
 }
 
@@ -580,7 +460,6 @@ impl<'a> App<'a> {
 
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, id);
-            gl::Uniform1i(uniform, 0);
 
             gl::EnableVertexAttribArray(0);
             gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
@@ -588,6 +467,7 @@ impl<'a> App<'a> {
             gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
 
             gl::UseProgram(self.program_texture);
+            gl::Uniform1i(uniform, 0);
 
             gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
 
@@ -730,7 +610,6 @@ impl<'a> App<'a> {
 
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, id);
-            gl::Uniform1i(uniform, 0);
 
             gl::EnableVertexAttribArray(0);
             gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
@@ -740,6 +619,8 @@ impl<'a> App<'a> {
             gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (4 * mem::size_of::<GLfloat>()) as *const _);
 
             gl::UseProgram(self.program_text);
+            // TODO this makes an error
+            gl::Uniform1i(uniform, 0);
 
             gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
 

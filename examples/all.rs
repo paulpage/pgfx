@@ -6,12 +6,12 @@ use rand::Rng;
 
 fn main() {
 
-    let rect_count = 1_000_000;
+    let mut rect_count = 1_000_000;
 
     let mut rng = rand::thread_rng();
     let mut rects = vec![Rect::new(0, 0, 0, 0); rect_count];
     for i in 0..rect_count {
-        rects[i] = Rect::new(rng.gen_range(1..600), rng.gen_range(1..800), rng.gen_range(2..6), rng.gen_range(2..6));
+        rects[i] = Rect::new(rng.gen_range(1..600), rng.gen_range(1..800), rng.gen_range(10..30), rng.gen_range(10..30));
     }
 
     let mut colors = vec![Color::new(0, 0, 0, 0); rect_count];
@@ -40,8 +40,9 @@ fn main() {
     music.play();
     music.pause();
 
+    let mut force_allocation = true;
+    let mut alloc_count = 1000;
     while !app.should_quit {
-let very_start = Instant::now();
 let start = Instant::now();
 
         mouse_delta = app.mouse - last_mouse;
@@ -97,10 +98,9 @@ let start = Instant::now();
             music.pause();
         }
 
-        app.draw_rects(&rects, &colors, &rotations);
-        // for i in 0..rect_count {
-        //     app.draw_rect(rects[i], colors[i]);
-        // }
+        for i in 0..rect_count {
+            app.draw_rotated_rect(rects[i], colors[i], Point::new(rects[i].width as i32 / 2, rects[i].height as i32 / 2), rotations[i]);
+        }
 
         app.draw_rotated_rect(Rect::new(pos.x, pos.y, 200, 300), Color::new(100, 0, 0, 255), Point::new(100, 150), rotation);
         app.draw_text("Hello World!", 30, 30 + scroll_offset, 20.0, Color::new(0, 0, 100, 255));
@@ -108,5 +108,6 @@ let start = Instant::now();
         app.draw_texture(&texture, Rect::new(64, 64, 64, 64), Rect::new(5, 5, 128, 128));
 
         app.present();
+        println!("Frame time: {:?}", Instant::now() - start);
     }
 }

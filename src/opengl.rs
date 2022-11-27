@@ -1,4 +1,7 @@
-use std::ffi::CString;
+use gl::types::*;
+use std::ffi::{CString, c_void, CStr};
+use std::ptr;
+use std::io::prelude::*;
 
 fn create_shader(shader_type: u32, source: &str) -> u32 {
     unsafe {
@@ -60,3 +63,15 @@ pub fn create_program(
 
 }
 
+pub extern "system" fn debug_callback(
+    source: GLenum,
+    type_: GLenum,
+    id: GLenum,
+    severity: GLenum,
+    length: GLsizei,
+    message: *const GLchar,
+    user_param: *mut c_void,
+) {
+    let msg = unsafe {CStr::from_ptr(message).to_str().unwrap()};
+    println!("DEBUG MESSAGE: {}", msg);
+}
