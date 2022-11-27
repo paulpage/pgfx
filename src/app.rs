@@ -180,6 +180,8 @@ impl<'a> App<'a> {
 
     pub fn present(&mut self) {
 
+        // TODO: drawing everything at the end like this breaks the ordering if you're expecting to have overlapping rects and textures
+
         let mut vao_2d = 0;
         unsafe {
             gl::Disable(gl::DEPTH_TEST);
@@ -373,59 +375,60 @@ pub struct Texture {
     pub width: usize,
     pub height: usize,
     pub data: Vec<u8>,
+    texture_id: u32,
 }
 
 impl Texture {
-    pub fn from_file(path: &str) -> Result<Texture, String> {
-        let result = stb_image::image::load(path);
-        if let LoadResult::ImageU8(image) = result {
-            return Ok(Texture {
-                width: image.width,
-                height: image.height,
-                data: image.data,
-            });
-        };
-        Err("Failed to load texture".to_string())
-    }
-}
 
-impl<'a> App<'a> {
-
-    pub fn draw_texture(&self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
-        let x = dest_rect.x as f32 * 2.0 / self.window_width as f32 - 1.0;
-        let y = 1.0 - dest_rect.y as f32 * 2.0 / self.window_height as f32;
-
+    pub fn new(width: usize, height: usize, data: Vec<u8>) -> Self {
         // Load the texture from the buffer
-        let (uniform, mut id) = unsafe {
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-            gl::Disable(gl::DEPTH_TEST);
-
-            let mut id: u32 = 0;
-            gl::GenTextures(1, &mut id);
+        let mut texture_id = unsafe {
+            let mut texture_id: u32 = 0;
+            gl::GenTextures(1, &mut texture_id);
             gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, id);
-
-            // TODO Decide what these should be.
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
+            gl::BindTexture(gl::TEXTURE_2D, texture_id);
 
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
                 gl::RGBA as GLint,
-                texture.width as GLint,
-                texture.height as GLint,
+                width as GLint,
+                height as GLint,
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
-                texture.data.as_ptr() as *const _
+                data.as_ptr() as *const _
             );
-            let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
 
-            (uniform, id)
+            texture_id
         };
+
+        Texture {
+            width,
+            height,
+            data,
+            texture_id,
+        }
+    }
+
+    pub fn from_file(path: &str) -> Result<Self, String> {
+        match stb_image::image::load(path) {
+            LoadResult::ImageU8(image) => Ok(Self::new(image.width, image.height, image.data)),
+            _ => Err("Failed to load texture".to_string()),
+        }
+    }
+}
+
+impl<'a> App<'a> {
+
+    pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
+        let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
+        // TODO
+    }
+
+    pub fn draw_texture(&self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
+        let x = dest_rect.x as f32 * 2.0 / self.window_width as f32 - 1.0;
+        let y = 1.0 - dest_rect.y as f32 * 2.0 / self.window_height as f32;
 
         let dest_width = dest_rect.width as f32 * 2.0 / self.window_width as f32;
         let dest_height = dest_rect.height as f32 * 2.0 / self.window_height as f32;
@@ -446,6 +449,15 @@ impl<'a> App<'a> {
 
         let (mut vao, mut vbo) = (0, 0);
         unsafe {
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            gl::Disable(gl::DEPTH_TEST);
+
+            // TODO Decide what these should be.
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
+
             gl::GenVertexArrays(1, &mut vao);
             gl::GenBuffers(1, &mut vbo);
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
@@ -459,13 +471,14 @@ impl<'a> App<'a> {
             let stride = 4 * mem::size_of::<GLfloat>() as GLsizei;
 
             gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, id);
+            gl::BindTexture(gl::TEXTURE_2D, texture.texture_id);
 
             gl::EnableVertexAttribArray(0);
             gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
             gl::EnableVertexAttribArray(1);
             gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
 
+            let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
             gl::UseProgram(self.program_texture);
             gl::Uniform1i(uniform, 0);
 
@@ -478,7 +491,7 @@ impl<'a> App<'a> {
         unsafe {
             gl::DeleteBuffers(1, &mut vbo);
             gl::DeleteVertexArrays(1, &mut vao);
-            gl::DeleteTextures(1, &mut id);
+            // gl::DeleteTextures(1, &mut id);
         }
     }
 }
@@ -619,7 +632,6 @@ impl<'a> App<'a> {
             gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (4 * mem::size_of::<GLfloat>()) as *const _);
 
             gl::UseProgram(self.program_text);
-            // TODO this makes an error
             gl::Uniform1i(uniform, 0);
 
             gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);

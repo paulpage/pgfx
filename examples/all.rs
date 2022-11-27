@@ -6,7 +6,7 @@ use rand::Rng;
 
 fn main() {
 
-    let mut rect_count = 1_000_000;
+    let mut rect_count = 100_000;
 
     let mut rng = rand::thread_rng();
     let mut rects = vec![Rect::new(0, 0, 0, 0); rect_count];
@@ -99,13 +99,14 @@ let start = Instant::now();
         }
 
         for i in 0..rect_count {
-            app.draw_rotated_rect(rects[i], colors[i], Point::new(rects[i].width as i32 / 2, rects[i].height as i32 / 2), rotations[i]);
+            app.draw_texture(&texture, Rect::new(64, 64, 64, 64), rects[i]);
+            // app.draw_rotated_rect(rects[i], colors[i], Point::new(rects[i].width as i32 / 2, rects[i].height as i32 / 2), rotations[i]);
         }
 
         app.draw_rotated_rect(Rect::new(pos.x, pos.y, 200, 300), Color::new(100, 0, 0, 255), Point::new(100, 150), rotation);
         app.draw_text("Hello World!", 30, 30 + scroll_offset, 20.0, Color::new(0, 0, 100, 255));
 
-        app.draw_texture(&texture, Rect::new(64, 64, 64, 64), Rect::new(5, 5, 128, 128));
+        // app.draw_texture(&texture, Rect::new(64, 64, 64, 64), Rect::new(5, 5, 128, 128));
 
         app.present();
         println!("Frame time: {:?}", Instant::now() - start);
