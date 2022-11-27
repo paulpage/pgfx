@@ -423,28 +423,19 @@ impl<'a> App<'a> {
 
     pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
-        // TODO
-    }
 
-    pub fn draw_texture(&self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
-        let x = dest_rect.x as f32 * 2.0 / self.window_width as f32 - 1.0;
-        let y = 1.0 - dest_rect.y as f32 * 2.0 / self.window_height as f32;
-
-        let dest_width = dest_rect.width as f32 * 2.0 / self.window_width as f32;
-        let dest_height = dest_rect.height as f32 * 2.0 / self.window_height as f32;
-        let y = y - dest_height;
         let u0 = src_rect.x as f32 / texture.width as f32;
         let u1 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
         let v0 = src_rect.y as f32 / texture.height as f32;
         let v1 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
 
         let vertices = [
-            x, y, u0, v1,
-            x + dest_width, y, u1, v1,
-            x + dest_width, y + dest_height, u1, v0,
-            x, y, u0, v1,
-            x + dest_width, y + dest_height, u1, v0,
-            x, y + dest_height, u0, v0,
+            x1, y1, u0, v1,
+            x2, y2, u1, v1,
+            x4, y4, u1, v0,
+            x1, y1, u0, v1,
+            x4, y4, u1, v0,
+            x3, y3, u0, v0,
         ];
 
         let (mut vao, mut vbo) = (0, 0);
@@ -493,6 +484,10 @@ impl<'a> App<'a> {
             gl::DeleteVertexArrays(1, &mut vao);
             // gl::DeleteTextures(1, &mut id);
         }
+    }
+
+    pub fn draw_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
+        self.draw_rotated_texture(texture, src_rect, dest_rect, Point::new(0, 0), 0.0);
     }
 }
 
