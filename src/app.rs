@@ -20,6 +20,15 @@ use rusttype::{point, Font, Scale, PositionedGlyph};
 use super::types::{Rect, Color, Point};
 use super::opengl::{create_program, debug_callback};
 
+#[derive(PartialEq)]
+enum DrawType {
+    Any,
+    Triangles,
+    Textures,
+    Models,
+    Text,
+}
+
 pub struct App<'a> {
     // SDL
     pub sdl: Sdl,
@@ -35,6 +44,9 @@ pub struct App<'a> {
     tri_buffer: u32,
     tri_vertices: Vec<f32>,
     last_tri_vertices_len: usize,
+    texture_map: HashMap<u32, Vec<f32>>,
+    text_entries: Vec<(u32, Vec<f32>)>,
+    last_draw_type: DrawType,
 
     // Window
     pub window_width: u32,
@@ -149,7 +161,10 @@ impl<'a> App<'a> {
             tri_buffer,
             tri_vertices: Vec::new(),
             last_tri_vertices_len: 0,
+            texture_map: HashMap::new(),
+            text_entries: Vec::new(),
             audio_subsys,
+            last_draw_type: DrawType::Any,
         }
     }
 
@@ -179,53 +194,26 @@ impl<'a> App<'a> {
     }
 
     pub fn present(&mut self) {
-
-        // TODO: drawing everything at the end like this breaks the ordering if you're expecting to have overlapping rects and textures
-
-        let mut vao_2d = 0;
-        unsafe {
-            gl::Disable(gl::DEPTH_TEST);
-
-            gl::GenVertexArrays(1, &mut vao_2d);
-            gl::BindBuffer(gl::ARRAY_BUFFER, self.tri_buffer);
-            if self.tri_vertices.len() == self.last_tri_vertices_len {
-                gl::BufferSubData(
-                    gl::ARRAY_BUFFER,
-                    0,
-                    (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                    self.tri_vertices.as_ptr() as *const _,
-                );
-            } else {
-                gl::BufferData(
-                    gl::ARRAY_BUFFER,
-                    (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                    self.tri_vertices.as_ptr() as *const _,
-                    gl::DYNAMIC_DRAW
-                );
-            }
-
-            gl::BindVertexArray(vao_2d);
-            let stride = 6 * mem::size_of::<GLfloat>() as GLsizei;
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
-
-            gl::UseProgram(self.program_2d);
-
-            gl::DrawArrays(gl::TRIANGLES, 0, self.tri_vertices.len() as GLsizei);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-
-            gl::DeleteVertexArrays(1, &mut vao_2d);
-        }
-
-
+        self.flush();
         self.canvas.present();
+    }
 
-        self.last_tri_vertices_len = self.tri_vertices.len();
-        self.tri_vertices.clear();
+    fn flush(&mut self) {
+        match self.last_draw_type {
+            DrawType::Triangles => self.flush_triangles(),
+            DrawType::Textures => self.flush_textures(),
+            DrawType::Models => self.flush_models(),
+            DrawType::Text => self.flush_text(),
+            DrawType::Any => (),
+        }
+        self.last_draw_type = DrawType::Any;
+    }
+
+    fn process_batch(&mut self, target_type: DrawType) {
+        if self.last_draw_type != target_type && self.last_draw_type != DrawType::Any {
+            self.flush();
+        }
+        self.last_draw_type = target_type;
     }
 }
 
@@ -342,6 +330,50 @@ fn get_rect_vertices(rect: Rect, origin: Point, rotation: f32, window_width: u32
 
 impl<'a> App<'a> {
 
+    fn flush_triangles(&mut self) {
+        let mut vao_2d = 0;
+        unsafe {
+            gl::Disable(gl::DEPTH_TEST);
+
+            gl::GenVertexArrays(1, &mut vao_2d);
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.tri_buffer);
+            if self.tri_vertices.len() == self.last_tri_vertices_len {
+                gl::BufferSubData(
+                    gl::ARRAY_BUFFER,
+                    0,
+                    (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    self.tri_vertices.as_ptr() as *const _,
+                );
+            } else {
+                gl::BufferData(
+                    gl::ARRAY_BUFFER,
+                    (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    self.tri_vertices.as_ptr() as *const _,
+                    gl::DYNAMIC_DRAW
+                );
+            }
+
+            gl::BindVertexArray(vao_2d);
+            let stride = 6 * mem::size_of::<GLfloat>() as GLsizei;
+            gl::EnableVertexAttribArray(0);
+            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
+            gl::EnableVertexAttribArray(1);
+            gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
+
+            gl::UseProgram(self.program_2d);
+
+            gl::DrawArrays(gl::TRIANGLES, 0, self.tri_vertices.len() as GLsizei);
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+            gl::BindVertexArray(0);
+
+            gl::DeleteVertexArrays(1, &mut vao_2d);
+        }
+
+        self.last_tri_vertices_len = self.tri_vertices.len();
+        self.tri_vertices.clear();
+    }
+
     pub fn draw_rotated_rect(&mut self, rect: Rect, color: Color, origin: Point, rotation: f32) {
 
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(rect, origin, rotation, self.window_width, self.window_height);
@@ -361,6 +393,8 @@ impl<'a> App<'a> {
             x4, y4, color[0], color[1], color[2], color[3],
             x3, y3, color[0], color[1], color[2], color[3],
         ]);
+
+        self.process_batch(DrawType::Triangles);
     }
 
     pub fn draw_rect(&mut self, rect: Rect, color: Color) {
@@ -421,6 +455,57 @@ impl Texture {
 
 impl<'a> App<'a> {
 
+    pub fn flush_textures(&mut self) {
+        for (texture_id, vertices) in &self.texture_map {
+            let (mut vao, mut vbo) = (0, 0);
+            unsafe {
+                gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                gl::Disable(gl::DEPTH_TEST);
+
+                // TODO Decide what these should be.
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as GLint);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as GLint);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
+
+                gl::GenVertexArrays(1, &mut vao);
+                gl::GenBuffers(1, &mut vbo);
+                gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+                gl::BufferData(
+                    gl::ARRAY_BUFFER,
+                    (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    vertices.as_ptr() as *const _,
+                    gl::STATIC_DRAW
+                );
+                gl::BindVertexArray(vao);
+                let stride = 4 * mem::size_of::<GLfloat>() as GLsizei;
+
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::BindTexture(gl::TEXTURE_2D, *texture_id);
+
+                gl::EnableVertexAttribArray(0);
+                gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
+                gl::EnableVertexAttribArray(1);
+                gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
+
+                let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
+                gl::UseProgram(self.program_texture);
+                gl::Uniform1i(uniform, 0);
+
+                gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
+
+                gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+                gl::BindVertexArray(0);
+            }
+            unsafe {
+                gl::DeleteBuffers(1, &mut vbo);
+                gl::DeleteVertexArrays(1, &mut vao);
+                // gl::DeleteTextures(1, &mut id);
+            }
+        }
+        self.texture_map.clear();
+    }
+
     pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
 
@@ -429,7 +514,7 @@ impl<'a> App<'a> {
         let v0 = src_rect.y as f32 / texture.height as f32;
         let v1 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
 
-        let vertices = [
+        let new_vertices = [
             x1, y1, u0, v1,
             x2, y2, u1, v1,
             x4, y4, u1, v0,
@@ -437,53 +522,11 @@ impl<'a> App<'a> {
             x4, y4, u1, v0,
             x3, y3, u0, v0,
         ];
+        self.texture_map.entry(texture.texture_id)
+            .and_modify(|e| e.extend_from_slice(&new_vertices))
+            .or_insert(Vec::from(new_vertices));
 
-        let (mut vao, mut vbo) = (0, 0);
-        unsafe {
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-            gl::Disable(gl::DEPTH_TEST);
-
-            // TODO Decide what these should be.
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
-
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                vertices.as_ptr() as *const _,
-                gl::STATIC_DRAW
-            );
-            gl::BindVertexArray(vao);
-            let stride = 4 * mem::size_of::<GLfloat>() as GLsizei;
-
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, texture.texture_id);
-
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
-
-            let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
-            gl::UseProgram(self.program_texture);
-            gl::Uniform1i(uniform, 0);
-
-            gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-        }
-
-        unsafe {
-            gl::DeleteBuffers(1, &mut vbo);
-            gl::DeleteVertexArrays(1, &mut vao);
-            // gl::DeleteTextures(1, &mut id);
-        }
+        self.process_batch(DrawType::Textures);
     }
 
     pub fn draw_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
@@ -509,6 +552,57 @@ impl Eq for FontCacheKey {}
 
 
 impl<'a> App<'a> {
+
+    pub fn flush_text(&mut self) {
+        for (id, vertices) in &self.text_entries {
+            let (mut vao, mut vbo) = (0, 0);
+            unsafe {
+
+                gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                gl::Disable(gl::DEPTH_TEST);
+
+                gl::GenVertexArrays(1, &mut vao);
+                gl::GenBuffers(1, &mut vbo);
+                gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+                gl::BufferData(
+                    gl::ARRAY_BUFFER,
+                    (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                    vertices.as_ptr() as *const _,
+                    gl::STATIC_DRAW
+                );
+                gl::BindVertexArray(vao);
+                let stride = 8 * mem::size_of::<GLfloat>() as GLsizei;
+
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::BindTexture(gl::TEXTURE_2D, *id);
+
+                gl::EnableVertexAttribArray(0);
+                gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
+                gl::EnableVertexAttribArray(1);
+                gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
+                gl::EnableVertexAttribArray(2);
+                gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (4 * mem::size_of::<GLfloat>()) as *const _);
+
+                gl::UseProgram(self.program_text);
+                let uniform = gl::GetUniformLocation(self.program_text, b"tex\0".as_ptr() as *const _);
+                gl::Uniform1i(uniform, 0);
+
+                gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
+
+                gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+                gl::BindVertexArray(0);
+            }
+
+            unsafe {
+                gl::DeleteBuffers(1, &mut vbo);
+                gl::DeleteVertexArrays(1, &mut vao);
+                gl::DeleteTextures(1, id);
+                // gl::DeleteProgram(program);
+            }
+        }
+        self.text_entries.clear();
+    }
+
     pub fn layout_text(&self, text: &str, scale: f32) -> (Vec<PositionedGlyph<'_>>, usize, usize) {
         let font_scale = Scale::uniform(scale);
         let v_metrics = self.font.v_metrics(font_scale);
@@ -527,7 +621,7 @@ impl<'a> App<'a> {
         (glyphs, width, height)
     }
 
-    pub fn draw_text(&self, text: &str, x: i32, y: i32, scale: f32, color: Color) -> Rect {
+    pub fn draw_text(&mut self, text: &str, x: i32, y: i32, scale: f32, color: Color) -> Rect {
         // Save the original parameters to return in the rect
         let input_x = x;
         let input_y = y;
@@ -552,16 +646,14 @@ impl<'a> App<'a> {
         }
 
         // Load the texture from the buffer
-        let (uniform, mut id) = unsafe {
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-            gl::Disable(gl::DEPTH_TEST);
-
+        let mut id = unsafe {
             let mut id: u32 = 0;
             gl::GenTextures(1, &mut id);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, id);
 
             // TODO Decide what these should be.
+            // TODO should these be by the draw or the load?
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as GLint);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as GLint);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
@@ -578,8 +670,7 @@ impl<'a> App<'a> {
                 gl::FLOAT,
                 buffer.as_ptr() as *const _
             );
-            let uniform = gl::GetUniformLocation(self.program_text, b"tex\0".as_ptr() as *const _);
-            (uniform, id)
+            id
         };
 
         let x = x as f32 * 2.0 / self.window_width as f32 - 1.0;
@@ -602,45 +693,9 @@ impl<'a> App<'a> {
             x, y + height, 0.0, 0.0, color[0], color[1], color[2], color[3],
         ];
 
-        let (mut vao, mut vbo) = (0, 0);
-        unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                vertices.as_ptr() as *const _,
-                gl::STATIC_DRAW
-            );
-            gl::BindVertexArray(vao);
-            let stride = 8 * mem::size_of::<GLfloat>() as GLsizei;
+        self.text_entries.push((id, Vec::from(vertices)));
 
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, id);
-
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
-            gl::EnableVertexAttribArray(2);
-            gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (4 * mem::size_of::<GLfloat>()) as *const _);
-
-            gl::UseProgram(self.program_text);
-            gl::Uniform1i(uniform, 0);
-
-            gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-        }
-
-        unsafe {
-            gl::DeleteBuffers(1, &mut vbo);
-            gl::DeleteVertexArrays(1, &mut vao);
-            gl::DeleteTextures(1, &mut id);
-            // gl::DeleteProgram(program);
-        }
+        self.process_batch(DrawType::Text);
 
         Rect::new(input_x, input_y, glyphs_width as u32, glyphs_height as u32)
     }
@@ -760,6 +815,10 @@ fn get_mouse_ray(aspect_ratio: f32, mouse_position: Vector2<f32>, camera: &Camer
 }
 
 impl<'a> App<'a> {
+
+    pub fn flush_models(&mut self) {
+        // TODO
+    }
 
     pub fn start_3d(&self) {
         unsafe {
