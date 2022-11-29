@@ -418,8 +418,8 @@ impl Texture {
         // Load the texture from the buffer
         let mut texture_id = unsafe {
             let mut texture_id: u32 = 0;
-            gl::GenTextures(1, &mut texture_id);
             gl::ActiveTexture(gl::TEXTURE0);
+            gl::GenTextures(1, &mut texture_id);
             gl::BindTexture(gl::TEXTURE_2D, texture_id);
 
             gl::TexImage2D(
@@ -459,6 +459,8 @@ impl<'a> App<'a> {
         for (texture_id, vertices) in &self.texture_map {
             let (mut vao, mut vbo) = (0, 0);
             unsafe {
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::BindTexture(gl::TEXTURE_2D, *texture_id);
                 gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
                 gl::Disable(gl::DEPTH_TEST);
 
@@ -480,8 +482,6 @@ impl<'a> App<'a> {
                 gl::BindVertexArray(vao);
                 let stride = 4 * mem::size_of::<GLfloat>() as GLsizei;
 
-                gl::ActiveTexture(gl::TEXTURE0);
-                gl::BindTexture(gl::TEXTURE_2D, *texture_id);
 
                 gl::EnableVertexAttribArray(0);
                 gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
@@ -509,10 +509,10 @@ impl<'a> App<'a> {
     pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
 
-        let u0 = src_rect.x as f32 / texture.width as f32;
-        let u1 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
-        let v0 = src_rect.y as f32 / texture.height as f32;
-        let v1 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
+        let u0 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
+        let u1 = src_rect.x as f32 / texture.width as f32;
+        let v0 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
+        let v1 = src_rect.y as f32 / texture.height as f32;
 
         let new_vertices = [
             x1, y1, u0, v1,
@@ -558,8 +558,12 @@ impl<'a> App<'a> {
             let (mut vao, mut vbo) = (0, 0);
             unsafe {
 
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::BindTexture(gl::TEXTURE_2D, *id);
+
                 gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
                 gl::Disable(gl::DEPTH_TEST);
+
 
                 gl::GenVertexArrays(1, &mut vao);
                 gl::GenBuffers(1, &mut vbo);
@@ -573,8 +577,6 @@ impl<'a> App<'a> {
                 gl::BindVertexArray(vao);
                 let stride = 8 * mem::size_of::<GLfloat>() as GLsizei;
 
-                gl::ActiveTexture(gl::TEXTURE0);
-                gl::BindTexture(gl::TEXTURE_2D, *id);
 
                 gl::EnableVertexAttribArray(0);
                 gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
@@ -648,8 +650,8 @@ impl<'a> App<'a> {
         // Load the texture from the buffer
         let mut id = unsafe {
             let mut id: u32 = 0;
-            gl::GenTextures(1, &mut id);
             gl::ActiveTexture(gl::TEXTURE0);
+            gl::GenTextures(1, &mut id);
             gl::BindTexture(gl::TEXTURE_2D, id);
 
             // TODO Decide what these should be.
