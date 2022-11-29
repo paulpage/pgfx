@@ -509,8 +509,8 @@ impl<'a> App<'a> {
     pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
 
-        let u0 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
-        let u1 = src_rect.x as f32 / texture.width as f32;
+        let u0 = src_rect.x as f32 / texture.width as f32;
+        let u1 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
         let v0 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
         let v1 = src_rect.y as f32 / texture.height as f32;
 
