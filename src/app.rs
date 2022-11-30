@@ -2,7 +2,7 @@ use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::render::{Texture as SdlTexture, WindowCanvas};
 use sdl2::mouse::MouseButton;
-use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
+use sdl2::mixer::{Channel, InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 use sdl2::AudioSubsystem;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -70,6 +70,10 @@ pub struct App<'a> {
 
     // Control flow
     pub should_quit: bool,
+
+    // Audio
+    music: Option<sdl2::mixer::Music<'a>>,
+    first_available_channel: i32,
 }
 
 impl<'a> App<'a> {
@@ -165,6 +169,8 @@ impl<'a> App<'a> {
             text_entries: Vec::new(),
             audio_subsys,
             last_draw_type: DrawType::Any,
+            first_available_channel: 0,
+            music: None,
         }
     }
 
@@ -431,7 +437,7 @@ impl Texture {
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
-                data.as_ptr() as *const _
+                data.as_ptr() as *const _,
             );
 
             texture_id
@@ -456,6 +462,8 @@ impl Texture {
 impl<'a> App<'a> {
 
     pub fn flush_textures(&mut self) {
+        // TODO this can draw textures in the wrong order because it draws all of the same texture
+        // at once
         for (texture_id, vertices) in &self.texture_map {
             let (mut vao, mut vbo) = (0, 0);
             unsafe {
@@ -927,48 +935,60 @@ impl<'a> App<'a> {
 
 // Audio ============================================================
 
-pub struct Music<'a> {
-    music: sdl2::mixer::Music<'a>,
-    paused: bool,
-}
+impl<'a> App<'a> {
+    pub fn load_music(&mut self, path: &str) {
+        self.music = Some(sdl2::mixer::Music::from_file(path).unwrap());
+    }
 
-impl<'a> Music<'a> {
-    pub fn from_file(path: &str) -> Self {
-        Self {
-            music: sdl2::mixer::Music::from_file(path).unwrap(),
-            paused: false,
+    pub fn play_music(&self) {
+        if let Some(music) = &self.music {
+            music.play(-1).unwrap();
         }
     }
 
-    pub fn play(&self) {
-        self.music.play(-1).unwrap();
+    pub fn pause_music(&self) {
+        if let Some(_music) = &self.music {
+            sdl2::mixer::Music::pause();
+        }
     }
 
-    pub fn pause(&self) {
-        sdl2::mixer::Music::pause();
-    }
-
-    pub fn resume(&self) {
-        sdl2::mixer::Music::resume();
-    }
-
-    pub fn is_paused(&self) -> bool {
-        sdl2::mixer::Music::is_paused()
+    pub fn resume_music(&self) {
+        if let Some(_music) = &self.music {
+            sdl2::mixer::Music::resume();
+        }
     }
 }
 
 pub struct Sound {
     chunk: sdl2::mixer::Chunk,
+    channel: Channel,
+}
+
+impl<'a> App<'a> {
+    pub fn load_sound(&mut self, path: &str) -> Sound {
+        let sound = Sound {
+            chunk: sdl2::mixer::Chunk::from_file(path).unwrap(),
+            channel: Channel(self.first_available_channel),
+        };
+        self.first_available_channel += 1;
+        sound
+    }
 }
 
 impl Sound {
-    pub fn from_file(path: &str) -> Self {
-        Self {
-            chunk: sdl2::mixer::Chunk::from_file(path).unwrap(),
-        }
+    pub fn play(&self) {
+        self.channel.play(&self.chunk, 0).unwrap();
     }
 
-    pub fn play(&self) {
-        sdl2::mixer::Channel::all().play(&self.chunk, 0).unwrap();
+    pub fn play_loop(&self) {
+        self.channel.play(&self.chunk, -1).unwrap();
+    }
+
+    pub fn pause(&self) {
+        self.channel.pause();
+    }
+
+    pub fn resume(&self) {
+        self.channel.resume();
     }
 }

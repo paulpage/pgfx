@@ -1,4 +1,4 @@
-use pgfx::app::{App, Texture, Music, Sound};
+use pgfx::app::{App, Texture, Sound};
 use pgfx::types::{Rect, Color, Point};
 use std::time::{Duration, Instant};
 use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
@@ -24,6 +24,7 @@ fn main() {
     let mut app = App::new("/usr/share/fonts/TTF/DejaVuSans.ttf", 32);
     let background_color = Color::new(0, 100, 0, 255);
     let mut scroll_offset = 0;
+    let rat = Texture::from_file("rat2.png").unwrap();
     let texture = Texture::from_file("/usr/share/icons/hicolor/128x128/apps/firefox.png").unwrap();
     
     let mut pos = Point::new(200, 200);
@@ -34,11 +35,12 @@ fn main() {
     let mut last_mouse = Point::new(0, 0);
     let mut mouse_delta = Point::new(0, 0);
 
-    let music = Music::from_file("spinning_rat.ogg");
-    let sound = Sound::from_file("/home/paul/pop.ogg");
-    let bark = Sound::from_file("/home/paul/bark.ogg");
-    music.play();
-    music.pause();
+    let music = app.load_music("spinning_rat.ogg");
+    let music_backwards = app.load_sound("tar_gninnips.ogg");
+    let sound = app.load_sound("/home/paul/pop.ogg");
+    let bark = app.load_sound("/home/paul/bark.ogg");
+    app.play_music();
+    music_backwards.play_loop();
 
     let mut force_allocation = true;
     let mut alloc_count = 1000;
@@ -77,26 +79,32 @@ let start = Instant::now();
 
         app.clear(background_color);
 
-        if app.mouse_left_pressed {
-            println!("hello left");
-            bark.play();
-        }
-
         if app.mouse_left_down {
             app.draw_rect(Rect::new(10, 0, 10, 10), Color::new(0, 0, 100, 255));
+            rotation -= 0.002;
         }
         if app.mouse_right_down {
             app.draw_rect(Rect::new(20, 0, 10, 10), Color::new(0, 0, 100, 255));
-            rotation += 0.02;
+            rotation += 0.002;
         }
 
         if app.mouse_right_pressed {
-            println!("hello right");
-            music.resume();
+            music_backwards.resume();
         }
-        if !app.mouse_right_down {
-            music.pause();
+        if app.mouse_left_pressed {
+            app.resume_music();
         }
+        // if app.mouse_right_pressed || app.mouse_left_pressed {
+        //     music.resume();
+        // }
+        if !app.mouse_right_down && !app.mouse_left_down {
+            app.pause_music();
+            music_backwards.pause();
+        }
+
+        // if app.mouse_middle_pressed {
+        //     bark.play();
+        // }
 
         // for i in 0..rect_count {
         //     app.draw_rotated_rect(rects[i], colors[i], Point::new(rects[i].width as i32 / 2, rects[i].height as i32 / 2), rotations[i]);
@@ -108,7 +116,8 @@ let start = Instant::now();
             app.draw_rotated_texture(&texture, Rect::new(64, 64, 64, 64), rects[i], Point::new(rects[i].width as i32 / 2, rects[i].height as i32 / 2), rotations[i]);
         }
 
-        app.draw_rotated_rect(Rect::new(pos.x, pos.y, 200, 300), Color::new(100, 0, 0, 255), Point::new(100, 150), rotation);
+        // app.draw_rotated_rect(Rect::new(pos.x, pos.y, 200, 300), Color::new(100, 0, 0, 255), Point::new(100, 150), rotation);
+        app.draw_rotated_texture(&rat, Rect::new(0, 0, rat.width as u32, rat.height as u32), Rect::new(pos.x, pos.y, rat.width as u32 * 4, rat.height as u32 * 4), Point::new(rat.width as i32 * 2, rat.height as i32 * 2), rotation);
         app.draw_text("Hello World!", 30, 30 + scroll_offset, 20.0, Color::new(0, 0, 100, 255));
 
         app.draw_texture(&texture, Rect::new(64, 64, 64, 64), Rect::new(5, 5, 128, 128));
