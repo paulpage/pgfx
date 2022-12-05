@@ -8,11 +8,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
 
-use std::ffi::{CString, c_void};
 use std::{ptr, mem};
 use gl::types::*;
 use stb_image::{self, image::LoadResult};
-use std::time::{Duration, Instant};
+// use std::time::{Duration, Instant};
 use cgmath::{Matrix4, Vector2, Deg, Vector3, Point3, SquareMatrix, Vector4};
 
 use rusttype::{point, Font, Scale, PositionedGlyph};
@@ -49,12 +48,12 @@ pub struct App<'a> {
     last_draw_type: DrawType,
 
     // Window
-    pub window_width: u32,
-    pub window_height: u32,
+    pub window_width: f32,
+    pub window_height: f32,
 
     // Text
-    pub char_width: i32,
-    pub font_size: i32,
+    pub char_width: f32,
+    pub font_size: f32,
     pub font: Font<'a>,
     font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
 
@@ -78,7 +77,7 @@ pub struct App<'a> {
 
 impl<'a> App<'a> {
 
-    pub fn new(font_path: &str, font_size: u16) -> Self {
+    pub fn new(font_path: &str, font_size: f32) -> Self {
         let sdl = sdl2::init().unwrap();
         let video_subsys = sdl.video().unwrap();
         let window = video_subsys
@@ -98,7 +97,7 @@ impl<'a> App<'a> {
         let channels = DEFAULT_CHANNELS;
         let chunk_size = 1024;
         sdl2::mixer::open_audio(frequency, format, channels, chunk_size).unwrap();
-        let result = sdl2::mixer::allocate_channels(8);
+        let _result = sdl2::mixer::allocate_channels(8);
         
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
@@ -119,7 +118,7 @@ impl<'a> App<'a> {
             Font::try_from_vec(data).unwrap()
         };
 
-        let char_width = font.glyph('o').scaled(Scale::uniform(font_size as f32)).h_metrics().advance_width as i32;
+        let char_width = font.glyph('o').scaled(Scale::uniform(font_size)).h_metrics().advance_width;
 
         let uniforms = unsafe {
             Uniforms {
@@ -142,9 +141,9 @@ impl<'a> App<'a> {
         Self {
             sdl,
             char_width,
-            font_size: font_size as i32,
-            window_width: 800,
-            window_height: 600,
+            font_size: font_size,
+            window_width: 800.0,
+            window_height: 600.0,
             font,
             font_cache: HashMap::new(),
             canvas,
@@ -153,8 +152,8 @@ impl<'a> App<'a> {
             program_text,
             program_texture,
             uniforms,
-            mouse: Point::new(0, 0),
-            scroll: Point::new(0, 0),
+            mouse: Point::new(0.0, 0.0),
+            scroll: Point::new(0.0, 0.0),
             mouse_left_down: false,
             mouse_left_pressed: false,
             mouse_right_down: false,
@@ -174,7 +173,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn resize(&mut self, width: f32, height: f32) {
         self.window_width = width;
         self.window_height = height;
         unsafe {
@@ -188,13 +187,12 @@ impl<'a> App<'a> {
 
     pub fn clear(&self, color: Color) {
         unsafe {
-            let color = [
+            gl::ClearColor(
                 color.r as f32 / 255.0,
                 color.g as f32 / 255.0,
                 color.b as f32 / 255.0,
                 color.a as f32 / 255.0,
-            ];
-            gl::ClearColor(color[0], color[1], color[2], color[3]);
+            );
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         }
     }
@@ -228,8 +226,8 @@ impl<'a> App<'a> {
 impl<'a> App<'a> {
 
     pub fn update(&mut self) {
-        self.scroll.x = 0;
-        self.scroll.y = 0;
+        self.scroll.x = 0.0;
+        self.scroll.y = 0.0;
         self.mouse_left_pressed = false;
         self.mouse_right_pressed = false;
         self.mouse_middle_pressed = false;
@@ -238,17 +236,17 @@ impl<'a> App<'a> {
                 Event::Quit { .. } => self.should_quit = true,
                 Event::Window { win_event, .. } => {
                     match win_event {
-                        WindowEvent::Resized(width, height) => self.resize(width as u32, height as u32),
+                        WindowEvent::Resized(width, height) => self.resize(width as f32, height as f32),
                         _ => (),
                     }
                 }
                 Event::MouseWheel { x, y, .. } => {
-                    self.scroll.x += x * 10;
-                    self.scroll.y += y * 10;
+                    self.scroll.x += x as f32 * 10.0;
+                    self.scroll.y += y as f32 * 10.0;
                 }
                 Event::MouseMotion { x, y, .. } => {
-                    self.mouse.x = x;
-                    self.mouse.y = y;
+                    self.mouse.x = x as f32;
+                    self.mouse.y = y as f32;
                 }
                 Event::MouseButtonUp { mouse_btn, .. } => {
                     match mouse_btn {
@@ -290,13 +288,13 @@ impl<'a> App<'a> {
 
 // Shapes ============================================================
 
-fn get_rect_vertices(rect: Rect, origin: Point, rotation: f32, window_width: u32, window_height: u32) -> [f32; 8] {
-    let x = rect.x as f32;
-    let y = rect.y as f32;
-    let width = rect.width as f32;
-    let height =  rect.height as f32;
-    let dx = -origin.x as f32;
-    let dy = -origin.y as f32;
+fn get_rect_vertices(rect: Rect, origin: Point, rotation: f32, window_width: f32, window_height: f32) -> [f32; 8] {
+    let x = rect.x;
+    let y = rect.y;
+    let width = rect.width;
+    let height =  rect.height;
+    let dx = -origin.x;
+    let dy = -origin.y;
 
     let (x1, y1, x2, y2, x3, y3, x4, y4) = if rotation == 0.0 {
         let x = x + dx;
@@ -384,27 +382,20 @@ impl<'a> App<'a> {
 
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(rect, origin, rotation, self.window_width, self.window_height);
 
-        let color = [
-            color.r as f32 / 255.0,
-            color.g as f32 / 255.0,
-            color.b as f32 / 255.0,
-            color.a as f32 / 255.0,
-        ];
-
         self.tri_vertices.extend_from_slice(&[
-            x1, y1, color[0], color[1], color[2], color[3],
-            x2, y2, color[0], color[1], color[2], color[3],
-            x4, y4, color[0], color[1], color[2], color[3],
-            x1, y1, color[0], color[1], color[2], color[3],
-            x4, y4, color[0], color[1], color[2], color[3],
-            x3, y3, color[0], color[1], color[2], color[3],
+            x1, y1, color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0,
+            x2, y2, color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0,
+            x4, y4, color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0,
+            x1, y1, color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0,
+            x4, y4, color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0,
+            x3, y3, color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0, color.a as f32 / 255.0,
         ]);
 
         self.process_batch(DrawType::Triangles);
     }
 
     pub fn draw_rect(&mut self, rect: Rect, color: Color) {
-        self.draw_rotated_rect(rect, color, Point::new(0, 0), 0.0);
+        self.draw_rotated_rect(rect, color, Point::new(0.0, 0.0), 0.0);
     }
 }
 
@@ -412,8 +403,8 @@ impl<'a> App<'a> {
 // Textures ============================================================
 
 pub struct Texture {
-    pub width: usize,
-    pub height: usize,
+    pub width: f32,
+    pub height: f32,
     pub data: Vec<u8>,
     texture_id: u32,
 }
@@ -422,7 +413,7 @@ impl Texture {
 
     pub fn new(width: usize, height: usize, data: Vec<u8>) -> Self {
         // Load the texture from the buffer
-        let mut texture_id = unsafe {
+        let texture_id = unsafe {
             let mut texture_id: u32 = 0;
             gl::ActiveTexture(gl::TEXTURE0);
             gl::GenTextures(1, &mut texture_id);
@@ -444,8 +435,8 @@ impl Texture {
         };
 
         Texture {
-            width,
-            height,
+            width: width as f32,
+            height: height as f32,
             data,
             texture_id,
         }
@@ -517,10 +508,10 @@ impl<'a> App<'a> {
     pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
 
-        let u0 = src_rect.x as f32 / texture.width as f32;
-        let u1 = (src_rect.x as f32 + src_rect.width as f32) / texture.width as f32;
-        let v0 = (src_rect.y as f32 + src_rect.height as f32) / texture.height as f32;
-        let v1 = src_rect.y as f32 / texture.height as f32;
+        let u0 = src_rect.x / texture.width;
+        let u1 = (src_rect.x + src_rect.width) / texture.width;
+        let v0 = (src_rect.y + src_rect.height) / texture.height;
+        let v1 = src_rect.y / texture.height;
 
         let new_vertices = [
             x1, y1, u0, v1,
@@ -538,7 +529,7 @@ impl<'a> App<'a> {
     }
 
     pub fn draw_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
-        self.draw_rotated_texture(texture, src_rect, dest_rect, Point::new(0, 0), 0.0);
+        self.draw_rotated_texture(texture, src_rect, dest_rect, Point::new(0.0, 0.0), 0.0);
     }
 }
 
@@ -631,7 +622,7 @@ impl<'a> App<'a> {
         (glyphs, width, height)
     }
 
-    pub fn draw_text(&mut self, text: &str, x: i32, y: i32, scale: f32, color: Color) -> Rect {
+    pub fn draw_text(&mut self, text: &str, x: f32, y: f32, scale: f32, color: Color) -> Rect {
         // Save the original parameters to return in the rect
         let input_x = x;
         let input_y = y;
@@ -656,7 +647,7 @@ impl<'a> App<'a> {
         }
 
         // Load the texture from the buffer
-        let mut id = unsafe {
+        let id = unsafe {
             let mut id: u32 = 0;
             gl::ActiveTexture(gl::TEXTURE0);
             gl::GenTextures(1, &mut id);
@@ -683,10 +674,10 @@ impl<'a> App<'a> {
             id
         };
 
-        let x = x as f32 * 2.0 / self.window_width as f32 - 1.0;
-        let y = 1.0 - y as f32 * 2.0 / self.window_height as f32;
-        let height = glyphs_height as f32 * 2.0 / self.window_height as f32;
-        let width = glyphs_width as f32 * 2.0 / self.window_width as f32;
+        let x = x * 2.0 / self.window_width - 1.0;
+        let y = 1.0 - y * 2.0 / self.window_height;
+        let height = glyphs_height as f32 * 2.0 / self.window_height;
+        let width = glyphs_width as f32 * 2.0 / self.window_width;
         let y = y - height;
         let color = [
             color.r as f32 / 255.0,
@@ -707,12 +698,12 @@ impl<'a> App<'a> {
 
         self.process_batch(DrawType::Text);
 
-        Rect::new(input_x, input_y, glyphs_width as u32, glyphs_height as u32)
+        Rect::new(input_x, input_y, glyphs_width as f32, glyphs_height as f32)
     }
 
-    pub fn text_length(&self, text: &str) -> i32 {
+    pub fn text_length(&self, text: &str) -> f32 {
         // TODO make this correct for non-monospace
-        text.len() as i32 * self.char_width
+        text.len() as f32 * self.char_width
         // let mut length = 0;
         // for c in text.chars() {
         //     let (x, _) = self.font.size_of_char(c).unwrap();
@@ -721,12 +712,12 @@ impl<'a> App<'a> {
         // length
     }
 
-    pub fn set_font(&mut self, path: &Path, size: u16) {
+    pub fn set_font(&mut self, path: &Path, size: f32) {
         self.font = {
             let data = std::fs::read(path).unwrap();
             Font::try_from_vec(data).unwrap()
         };
-        self.font_size = size as i32;
+        self.font_size = size;
     }
 }
 
@@ -774,8 +765,8 @@ impl Camera {
 pub struct Model {
     pub vao: u32,
     pub vertex_buffer_length: i32,
-    pub position: Vector3<i32>,
-    pub rotation: Vector3<i32>,
+    pub position: Vector3<f32>,
+    pub rotation: Vector3<f32>,
     pub transform: Matrix4<f32>,
     pub position_offset: Vector3<f32>,
     pub rotation_offset: Vector3<f32>,
@@ -784,11 +775,11 @@ pub struct Model {
 
 impl Model {
     pub fn set_transform(&mut self) {
-        let position = Vector3::new(self.position.x as f32 * 0.5, self.position.y as f32 * 0.2, self.position.z as f32 * 0.5);
+        let position = Vector3::new(self.position.x * 0.5, self.position.y * 0.2, self.position.z * 0.5);
         self.transform = Matrix4::from_translation(position - self.position_offset)
-            * Matrix4::from_angle_x(Deg((self.rotation.x * 90) as f32 - self.rotation_offset.x))
-            * Matrix4::from_angle_y(Deg((self.rotation.y * 90) as f32 - self.rotation_offset.y))
-            * Matrix4::from_angle_z(Deg((self.rotation.z * 90) as f32 - self.rotation_offset.z))
+            * Matrix4::from_angle_x(Deg((self.rotation.x * 90.0) - self.rotation_offset.x))
+            * Matrix4::from_angle_y(Deg((self.rotation.y * 90.0) - self.rotation_offset.y))
+            * Matrix4::from_angle_z(Deg((self.rotation.z * 90.0) - self.rotation_offset.z))
     }
 }
 
