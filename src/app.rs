@@ -23,7 +23,7 @@ use super::opengl::{create_program, debug_callback};
 enum DrawType {
     Any,
     Triangles,
-    Textures,
+    Textures(u32),
     Models,
     Text,
 }
@@ -43,7 +43,7 @@ pub struct App<'a> {
     tri_buffer: u32,
     tri_vertices: Vec<f32>,
     last_tri_vertices_len: usize,
-    texture_map: HashMap<u32, Vec<f32>>,
+    tex_vertices: Vec<f32>,
     text_entries: Vec<(u32, Vec<f32>)>,
     last_draw_type: DrawType,
 
@@ -164,7 +164,7 @@ impl<'a> App<'a> {
             tri_buffer,
             tri_vertices: Vec::new(),
             last_tri_vertices_len: 0,
-            texture_map: HashMap::new(),
+            tex_vertices: Vec::new(),
             text_entries: Vec::new(),
             audio_subsys,
             last_draw_type: DrawType::Any,
@@ -205,7 +205,7 @@ impl<'a> App<'a> {
     fn flush(&mut self) {
         match self.last_draw_type {
             DrawType::Triangles => self.flush_triangles(),
-            DrawType::Textures => self.flush_textures(),
+            DrawType::Textures(texture_id) => self.flush_textures(texture_id),
             DrawType::Models => self.flush_models(),
             DrawType::Text => self.flush_text(),
             DrawType::Any => (),
@@ -452,60 +452,58 @@ impl Texture {
 
 impl<'a> App<'a> {
 
-    pub fn flush_textures(&mut self) {
-        // TODO this can draw textures in the wrong order because it draws all of the same texture
-        // at once
-        for (texture_id, vertices) in &self.texture_map {
-            let (mut vao, mut vbo) = (0, 0);
-            unsafe {
-                gl::ActiveTexture(gl::TEXTURE0);
-                gl::BindTexture(gl::TEXTURE_2D, *texture_id);
-                gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                gl::Disable(gl::DEPTH_TEST);
+    pub fn flush_textures(&mut self, texture_id: u32) {
+        let (mut vao, mut vbo) = (0, 0);
+        unsafe {
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, texture_id);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            gl::Disable(gl::DEPTH_TEST);
 
-                // TODO Decide what these should be.
-                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as GLint);
-                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as GLint);
-                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
-                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
+            // TODO Decide what these should be.
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
 
-                gl::GenVertexArrays(1, &mut vao);
-                gl::GenBuffers(1, &mut vbo);
-                gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-                gl::BufferData(
-                    gl::ARRAY_BUFFER,
-                    (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                    vertices.as_ptr() as *const _,
-                    gl::STATIC_DRAW
-                );
-                gl::BindVertexArray(vao);
-                let stride = 4 * mem::size_of::<GLfloat>() as GLsizei;
+            gl::GenVertexArrays(1, &mut vao);
+            gl::GenBuffers(1, &mut vbo);
+            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+            gl::BufferData(
+                gl::ARRAY_BUFFER,
+                (self.tex_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                self.tex_vertices.as_ptr() as *const _,
+                gl::STATIC_DRAW
+            );
+            gl::BindVertexArray(vao);
+            let stride = 4 * mem::size_of::<GLfloat>() as GLsizei;
 
 
-                gl::EnableVertexAttribArray(0);
-                gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
-                gl::EnableVertexAttribArray(1);
-                gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
+            gl::EnableVertexAttribArray(0);
+            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
+            gl::EnableVertexAttribArray(1);
+            gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<GLfloat>()) as *const _);
 
-                let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
-                gl::UseProgram(self.program_texture);
-                gl::Uniform1i(uniform, 0);
+            let uniform = gl::GetUniformLocation(self.program_texture, b"tex\0".as_ptr() as *const _);
+            gl::UseProgram(self.program_texture);
+            gl::Uniform1i(uniform, 0);
 
-                gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
+            gl::DrawArrays(gl::TRIANGLES, 0, self.tex_vertices.len() as GLsizei);
 
-                gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-                gl::BindVertexArray(0);
-            }
-            unsafe {
-                gl::DeleteBuffers(1, &mut vbo);
-                gl::DeleteVertexArrays(1, &mut vao);
-                // gl::DeleteTextures(1, &mut id);
-            }
+            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+            gl::BindVertexArray(0);
         }
-        self.texture_map.clear();
+        unsafe {
+            gl::DeleteBuffers(1, &mut vbo);
+            gl::DeleteVertexArrays(1, &mut vao);
+            // gl::DeleteTextures(1, &mut id);
+        }
+        self.tex_vertices.clear();
     }
 
     pub fn draw_rotated_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect, origin: Point, rotation: f32) {
+        self.process_batch(DrawType::Textures(texture.texture_id));
+
         let [x1, x2, x3, x4, y1, y2, y3, y4] = get_rect_vertices(dest_rect, origin, rotation, self.window_width, self.window_height);
 
         let u0 = src_rect.x / texture.width;
@@ -521,11 +519,7 @@ impl<'a> App<'a> {
             x4, y4, u1, v0,
             x3, y3, u0, v0,
         ];
-        self.texture_map.entry(texture.texture_id)
-            .and_modify(|e| e.extend_from_slice(&new_vertices))
-            .or_insert(Vec::from(new_vertices));
-
-        self.process_batch(DrawType::Textures);
+        self.tex_vertices.extend_from_slice(&new_vertices);
     }
 
     pub fn draw_texture(&mut self, texture: &Texture, src_rect: Rect, dest_rect: Rect) {
