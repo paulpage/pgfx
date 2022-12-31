@@ -1,9 +1,10 @@
 use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
-use sdl2::render::{Texture as SdlTexture, WindowCanvas};
+use sdl2::render::Texture as SdlTexture;
 use sdl2::mouse::MouseButton;
 use sdl2::mixer::{Channel, InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 use sdl2::AudioSubsystem;
+use sdl2::video::{GLProfile, Window, GLContext};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
@@ -11,7 +12,6 @@ use std::path::Path;
 use std::{ptr, mem};
 use gl::types::*;
 use stb_image::{self, image::LoadResult};
-// use std::time::{Duration, Instant};
 use cgmath::{Matrix4, Vector2, Deg, Vector3, Point3, SquareMatrix, Vector4};
 
 use rusttype::{point, Font, Scale, PositionedGlyph};
@@ -32,7 +32,8 @@ enum DrawType {
 pub struct App<'a> {
     // SDL
     pub sdl: Sdl,
-    canvas: WindowCanvas,
+    window: Window,
+    gl_ctx: GLContext,
     audio_subsys: AudioSubsystem,
 
     // OpenGL
@@ -79,18 +80,22 @@ pub struct App<'a> {
 
 impl<'a> App<'a> {
 
-    pub fn new(font_path: &str, font_size: f32) -> Self {
+    pub fn new(title: &str, font_path: Option<&str>, font_size: f32) -> Self {
         let sdl = sdl2::init().unwrap();
         let video_subsys = sdl.video().unwrap();
+        let gl_attr = video_subsys.gl_attr();
+        gl_attr.set_context_profile(GLProfile::Core);
+        gl_attr.set_context_version(3, 3);
         let window = video_subsys
-            .window("SDL2_TTF Example", 800, 600)
+            .window(title, 800, 600)
             .position_centered()
             .resizable()
             .maximized()
             .opengl()
             .build()
             .unwrap();
-        let canvas: WindowCanvas = window.into_canvas().build().unwrap();
+        let gl_ctx = window.gl_create_context().unwrap();
+        gl::load_with(|name| video_subsys.gl_get_proc_address(name) as *const _);
 
         let audio_subsys = sdl.audio().unwrap();
         let _mixer_context = sdl2::mixer::init(InitFlag::OGG).unwrap();
@@ -102,7 +107,6 @@ impl<'a> App<'a> {
         let _result = sdl2::mixer::allocate_channels(8);
         
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
-        canvas.window().gl_set_context_to_current().unwrap();
 
         unsafe {
             gl::Enable(gl::DEBUG_OUTPUT);
@@ -116,7 +120,11 @@ impl<'a> App<'a> {
         let program_texture = create_program(include_str!("shaders/texture.vert"), include_str!("shaders/texture.frag"));
 
         let font = {
-            let data = std::fs::read(Path::new(font_path)).unwrap();
+            let data = if let Some(font_path) = font_path {
+                std::fs::read(Path::new(font_path)).unwrap()
+            } else {
+                include_bytes!("../res/DroidSans.ttf").to_vec()
+            };
             Font::try_from_vec(data).unwrap()
         };
 
@@ -148,7 +156,8 @@ impl<'a> App<'a> {
             window_height: 600.0,
             font,
             font_cache: HashMap::new(),
-            canvas,
+            window,
+            gl_ctx,
             program,
             program_2d,
             program_text,
@@ -202,7 +211,7 @@ impl<'a> App<'a> {
 
     pub fn present(&mut self) {
         self.flush();
-        self.canvas.present();
+        self.window.gl_swap_window();
     }
 
     fn flush(&mut self) {
@@ -351,7 +360,14 @@ impl<'a> App<'a> {
 
             gl::GenVertexArrays(1, &mut vao_2d);
             gl::BindBuffer(gl::ARRAY_BUFFER, self.tri_buffer);
+            // gl::BufferData(
+            //     gl::ARRAY_BUFFER,
+            //     (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+            //     self.tri_vertices.as_ptr() as *const _,
+            //     gl::DYNAMIC_DRAW
+            // );
             if self.tri_vertices.len() == self.last_tri_vertices_len {
+                println!("buffersub");
                 gl::BufferSubData(
                     gl::ARRAY_BUFFER,
                     0,
@@ -376,7 +392,7 @@ impl<'a> App<'a> {
 
             gl::UseProgram(self.program_2d);
 
-            gl::DrawArrays(gl::TRIANGLES, 0, self.tri_vertices.len() as GLsizei);
+            gl::DrawArrays(gl::TRIANGLES, 0, self.tri_vertices.len() as GLsizei / 6);
 
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
@@ -498,7 +514,7 @@ impl<'a> App<'a> {
             gl::UseProgram(self.program_texture);
             gl::Uniform1i(uniform, 0);
 
-            gl::DrawArrays(gl::TRIANGLES, 0, self.tex_vertices.len() as GLsizei);
+            gl::DrawArrays(gl::TRIANGLES, 0, self.tex_vertices.len() as GLsizei / 4);
 
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
@@ -592,7 +608,7 @@ impl<'a> App<'a> {
                 let uniform = gl::GetUniformLocation(self.program_text, b"tex\0".as_ptr() as *const _);
                 gl::Uniform1i(uniform, 0);
 
-                gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei);
+                gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei / 8);
 
                 gl::BindBuffer(gl::ARRAY_BUFFER, 0);
                 gl::BindVertexArray(0);
@@ -877,6 +893,7 @@ impl<'a> App<'a> {
             gl::Uniform3f(self.uniforms.light_specular, light[12], light[13], light[14]);
 
             gl::BindVertexArray(vao);
+            // TODO make sure this is passing in the vertex count, not byte or float count
             gl::DrawArrays(gl::TRIANGLES, 0, vertex_buffer_length as GLsizei);
             // gl::BindVertexArray(0);
             gl::Disable(gl::DEPTH_TEST);

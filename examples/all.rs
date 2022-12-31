@@ -21,11 +21,11 @@ fn main() {
 
     let mut rotations = vec![0.0; rect_count];
 
-    let mut app = App::new("/usr/share/fonts/TTF/DejaVuSans.ttf", 32.0);
+    let mut app = App::new("PGFX Example", None, 32.0);
     let background_color = Color::new(0, 100, 0);
     let mut scroll_offset = 0.0;
-    let rat = Texture::from_file("rat2.png").unwrap();
-    let texture = Texture::from_file("/usr/share/icons/hicolor/128x128/apps/firefox.png").unwrap();
+    let rat = Texture::from_file("res/pic.png").unwrap();
+    let texture = Texture::from_file("res/pic.png").unwrap();
     
     let mut pos = Point::new(200.0, 200.0);
     let mut drag_offset = Point::ZERO;
@@ -36,11 +36,11 @@ fn main() {
     let mut mouse_delta = Point::ZERO;
 
     let music = app.load_music("spinning_rat.ogg");
-    let music_backwards = app.load_sound("tar_gninnips.ogg");
-    let sound = app.load_sound("/home/paul/pop.ogg");
-    let bark = app.load_sound("/home/paul/bark.ogg");
+    // let music_backwards = app.load_sound("tar_gninnips.ogg");
+    // let sound = app.load_sound("/home/paul/pop.ogg");
+    // let bark = app.load_sound("/home/paul/bark.ogg");
     app.play_music();
-    music_backwards.play_loop();
+    // music_backwards.play_loop();
 
     let s1 = app.load_sound("spinning_rat.ogg");
     let s2 = app.load_sound("spinning_rat.ogg");
@@ -94,7 +94,7 @@ let start = Instant::now();
         }
 
         if app.mouse_right_pressed {
-            music_backwards.resume();
+            // music_backwards.resume();
         }
         if app.mouse_left_pressed {
             app.resume_music();
@@ -104,7 +104,7 @@ let start = Instant::now();
         // }
         if !app.mouse_right_down && !app.mouse_left_down {
             app.pause_music();
-            music_backwards.pause();
+            // music_backwards.pause();
         }
 
         // if app.mouse_middle_pressed {
@@ -118,15 +118,15 @@ let start = Instant::now();
         //     app.draw_text("Hello, World!", rects[i].x, rects[i].y, 20.0, Color::new(0, 0, 100));
         // }
         for i in 0..rect_count {
-            app.draw_rotated_texture(&texture, Rect::new(64.0, 64.0, 64.0, 64.0), rects[i], Point::new(rects[i].width / 2.0, rects[i].height / 2.0), rotations[i]);
+            app.draw_rotated_texture(&texture, Rect::new(texture.width / 2.0, texture.height / 2.0, texture.width / 2.0, texture.height / 2.0), rects[i], Point::new(rects[i].width / 2.0, rects[i].height / 2.0), rotations[i]);
         }
 
         // app.draw_rotated_rect(Rect::new(pos.x, pos.y, 200, 300), Color::new(100, 0, 0), Point::new(100, 150), rotation);
         app.draw_rotated_texture(&rat, Rect::new(0.0, 0.0, rat.width, rat.height), Rect::new(pos.x, pos.y, rat.width * 4.0, rat.height * 4.0), Point::new(rat.width * 2.0, rat.height * 2.0), rotation);
         app.draw_text("Hello World!", 30.0, 30.0 + scroll_offset, 20.0, Color::new(0, 0, 100));
 
-        app.draw_texture(&texture, Rect::new(64.0, 64.0, 64.0, 64.0), Rect::new(5.0, 5.0, 128.0, 128.0));
-        app.draw_texture(&texture, Rect::new(0.0, 0.0, 128.0, 128.0), Rect::new(200.0, 200.0, 128.0, 128.0));
+        app.draw_texture(&texture, Rect::new(texture.width / 2.0, texture.height / 2.0, texture.width / 2.0, texture.height / 2.0), Rect::new(5.0, 5.0, 128.0, 128.0));
+        app.draw_texture(&texture, Rect::new(0.0, 0.0, texture.width, texture.height), Rect::new(200.0, 200.0, 128.0, 128.0));
 
         app.present();
         // println!("Frame time: {:?}", Instant::now() - start);
