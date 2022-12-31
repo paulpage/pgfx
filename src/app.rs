@@ -18,6 +18,7 @@ use rusttype::{point, Font, Scale, PositionedGlyph};
 
 use super::types::{Rect, Color, Point};
 use super::opengl::{create_program, debug_callback};
+use super::keys::Key;
 
 #[derive(PartialEq)]
 enum DrawType {
@@ -66,6 +67,7 @@ pub struct App<'a> {
     pub mouse_right_pressed: bool,
     pub mouse_middle_down: bool,
     pub mouse_middle_pressed: bool,
+    pub keys_down: Vec<Key>,
 
     // Control flow
     pub should_quit: bool,
@@ -160,6 +162,7 @@ impl<'a> App<'a> {
             mouse_right_pressed: false,
             mouse_middle_down: false,
             mouse_middle_pressed: false,
+            keys_down: Vec::new(),
             should_quit: false,
             tri_buffer,
             tri_vertices: Vec::new(),
@@ -278,6 +281,13 @@ impl<'a> App<'a> {
                         }
                         _ => ()
                     }
+                }
+                Event::KeyDown { scancode, keymod, .. } => {
+                    if let Some(scancode) = scancode {
+                        self.keys_down.push(Key::from_sdl(scancode));
+                    }
+                }
+                Event::KeyUp { scancode, keymod, .. } => {
                 }
                 _ => (),
             }

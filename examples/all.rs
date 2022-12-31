@@ -42,6 +42,11 @@ fn main() {
     app.play_music();
     music_backwards.play_loop();
 
+    let s1 = app.load_sound("spinning_rat.ogg");
+    let s2 = app.load_sound("spinning_rat.ogg");
+    let s3 = app.load_sound("spinning_rat.ogg");
+    let s4 = app.load_sound("spinning_rat.ogg");
+
     let mut force_allocation = true;
     let mut alloc_count = 1000;
     while !app.should_quit {
