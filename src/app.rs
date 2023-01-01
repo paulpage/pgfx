@@ -1,6 +1,5 @@
 use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
-use sdl2::render::Texture as SdlTexture;
 use sdl2::mouse::MouseButton;
 use sdl2::mixer::{Channel, InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 use sdl2::AudioSubsystem;
@@ -356,12 +355,6 @@ impl<'a> App<'a> {
 
             gl::GenVertexArrays(1, &mut vao_2d);
             gl::BindBuffer(gl::ARRAY_BUFFER, self.tri_buffer);
-            // gl::BufferData(
-            //     gl::ARRAY_BUFFER,
-            //     (self.tri_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-            //     self.tri_vertices.as_ptr() as *const _,
-            //     gl::DYNAMIC_DRAW
-            // );
             if self.tri_vertices.len() == self.last_tri_vertices_len {
                 println!("buffersub");
                 gl::BufferSubData(
@@ -551,6 +544,7 @@ impl<'a> App<'a> {
 
 // Text ============================================================
 
+// TODO does this need size included?
 #[derive(Hash, PartialEq)]
 struct FontCacheKey {
     c: String,
@@ -558,9 +552,9 @@ struct FontCacheKey {
 }
 
 struct FontCacheEntry {
-    texture: SdlTexture,
-    w: i32,
-    h: i32,
+    texture_id: u32,
+    width: i32,
+    height: i32,
 }
 
 impl Eq for FontCacheKey {}
@@ -613,7 +607,7 @@ impl<'a> App<'a> {
             unsafe {
                 gl::DeleteBuffers(1, &mut vbo);
                 gl::DeleteVertexArrays(1, &mut vao);
-                gl::DeleteTextures(1, id);
+                // gl::DeleteTextures(1, id);
                 // gl::DeleteProgram(program);
             }
         }
@@ -643,52 +637,68 @@ impl<'a> App<'a> {
         let input_x = x;
         let input_y = y;
 
-        let (glyphs, glyphs_width, glyphs_height) = self.layout_text(text, scale);
-        
-        let mut buffer: Vec<f32> = vec![0.0; glyphs_width * glyphs_height];
-
-        for glyph in glyphs {
-            if let Some(bounding_box) = glyph.pixel_bounding_box() {
-
-                let min_x = bounding_box.min.x;
-                let min_y = bounding_box.min.y;
-
-                glyph.draw(|x, y, v| {
-                    let x = std::cmp::max(x as i32 + min_x, 1) as usize - 1;
-                    let y = std::cmp::max(y as i32 + min_y, 1) as usize - 1;
-                    let index = y * glyphs_width + x;
-                    buffer[index] = v;
-                });
-            }
-        }
-
-        // Load the texture from the buffer
-        let id = unsafe {
-            let mut id: u32 = 0;
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::GenTextures(1, &mut id);
-            gl::BindTexture(gl::TEXTURE_2D, id);
-
-            // TODO Decide what these should be.
-            // TODO should these be by the draw or the load?
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
-
-            gl::TexImage2D(
-                gl::TEXTURE_2D,
-                0,
-                gl::RED as GLint,
-                glyphs_width as GLint,
-                glyphs_height as GLint,
-                0,
-                gl::RED,
-                gl::FLOAT,
-                buffer.as_ptr() as *const _
-            );
-            id
+        let key = FontCacheKey {
+            c: text.to_string(),
+            color,
         };
+
+        let tex = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
+            let (glyphs, glyphs_width, glyphs_height) = self.layout_text(text, scale);
+            let mut buffer: Vec<f32> = vec![0.0; glyphs_width * glyphs_height];
+            for glyph in glyphs {
+                if let Some(bounding_box) = glyph.pixel_bounding_box() {
+
+                    let min_x = bounding_box.min.x;
+                    let min_y = bounding_box.min.y;
+
+                    glyph.draw(|x, y, v| {
+                        let x = std::cmp::max(x as i32 + min_x, 1) as usize - 1;
+                        let y = std::cmp::max(y as i32 + min_y, 1) as usize - 1;
+                        let index = y * glyphs_width + x;
+                        buffer[index] = v;
+                    });
+                }
+            }
+
+            // Load the texture from the buffer
+            let id = unsafe {
+                let mut id: u32 = 0;
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::GenTextures(1, &mut id);
+                gl::BindTexture(gl::TEXTURE_2D, id);
+
+                // TODO Decide what these should be.
+                // TODO should these be by the draw or the load?
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as GLint);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as GLint);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as GLint);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as GLint);
+
+                gl::TexImage2D(
+                    gl::TEXTURE_2D,
+                    0,
+                    gl::RED as GLint,
+                    glyphs_width as GLint,
+                    glyphs_height as GLint,
+                    0,
+                    gl::RED,
+                    gl::FLOAT,
+                    buffer.as_ptr() as *const _
+                );
+                id
+            };
+            let resource = Rc::new(FontCacheEntry {
+                texture_id: id,
+                width: glyphs_width as i32,
+                height: glyphs_height as i32,
+            });
+            self.font_cache.insert(key, resource.clone());
+            resource
+        });
+
+        let id = tex.texture_id;
+        let glyphs_width = tex.width;
+        let glyphs_height = tex.height;
 
         let x = x * 2.0 / self.window_width - 1.0;
         let y = 1.0 - y * 2.0 / self.window_height;
