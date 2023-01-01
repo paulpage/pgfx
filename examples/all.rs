@@ -24,7 +24,7 @@ fn main() {
     let mut app = App::new("PGFX Example", "/usr/share/fonts/TTF/DejaVuSansMono.ttf", 32.0);
     let background_color = Color::new(0, 100, 0);
     let mut scroll_offset = 0.0;
-    let rat = Texture::from_file("rat2.png").unwrap();
+    let rat = Texture::from_file("rat.png").unwrap();
     let texture = Texture::from_file("/usr/share/icons/hicolor/128x128/apps/firefox.png").unwrap();
     
     let mut pos = Point::new(200.0, 200.0);

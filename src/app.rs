@@ -356,7 +356,6 @@ impl<'a> App<'a> {
             gl::GenVertexArrays(1, &mut vao_2d);
             gl::BindBuffer(gl::ARRAY_BUFFER, self.tri_buffer);
             if self.tri_vertices.len() == self.last_tri_vertices_len {
-                println!("buffersub");
                 gl::BufferSubData(
                     gl::ARRAY_BUFFER,
                     0,
