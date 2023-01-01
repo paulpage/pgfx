@@ -80,7 +80,7 @@ pub struct App<'a> {
 
 impl<'a> App<'a> {
 
-    pub fn new(title: &str, font_path: Option<&str>, font_size: f32) -> Self {
+    pub fn new(title: &str, font_path: &str, font_size: f32) -> Self {
         let sdl = sdl2::init().unwrap();
         let video_subsys = sdl.video().unwrap();
         let gl_attr = video_subsys.gl_attr();
@@ -120,11 +120,7 @@ impl<'a> App<'a> {
         let program_texture = create_program(include_str!("shaders/texture.vert"), include_str!("shaders/texture.frag"));
 
         let font = {
-            let data = if let Some(font_path) = font_path {
-                std::fs::read(Path::new(font_path)).unwrap()
-            } else {
-                include_bytes!("../res/DroidSans.ttf").to_vec()
-            };
+            let data = std::fs::read(Path::new(font_path)).unwrap();
             Font::try_from_vec(data).unwrap()
         };
 
