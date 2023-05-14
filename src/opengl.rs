@@ -65,11 +65,20 @@ pub extern "system" fn debug_callback(
     _source: GLenum,
     _type: GLenum,
     _id: GLenum,
-    _severity: GLenum,
+    severity: GLenum,
     _length: GLsizei,
     message: *const GLchar,
     _user_param: *mut c_void,
 ) {
     let msg = unsafe {CStr::from_ptr(message).to_str().unwrap()};
-    println!("DEBUG MESSAGE: {}", msg);
+    if severity != gl::DEBUG_SEVERITY_NOTIFICATION {
+        let severity_str = match severity {
+            gl::DEBUG_SEVERITY_HIGH => "high",
+            gl::DEBUG_SEVERITY_MEDIUM => "medium",
+            gl::DEBUG_SEVERITY_LOW => "low",
+            gl::DEBUG_SEVERITY_NOTIFICATION => "notification",
+            _ => "???"
+        };
+        println!("DEBUG MESSAGE: [{severity_str}]{}", msg);
+    }
 }

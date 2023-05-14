@@ -21,11 +21,11 @@ fn main() {
 
     let mut rotations = vec![0.0; rect_count];
 
-    let mut app = App::new("PGFX Example", "/usr/share/fonts/TTF/DejaVuSansMono.ttf", 32.0);
+    let mut app = App::new("PGFX Example", "pgfx/res/DroidSans.ttf", 32.0);
     let background_color = Color::new(0, 100, 0);
     let mut scroll_offset = 0.0;
-    let rat = Texture::from_file("rat.png").unwrap();
-    let texture = Texture::from_file("/usr/share/icons/hicolor/128x128/apps/firefox.png").unwrap();
+    let rat = Texture::from_file("pgfx/res/pic.png").unwrap();
+    let texture = Texture::from_file("pgfx/res/pic.png").unwrap();
     
     let mut pos = Point::new(200.0, 200.0);
     let mut drag_offset = Point::ZERO;
@@ -35,17 +35,17 @@ fn main() {
     let mut last_mouse = Point::ZERO;
     let mut mouse_delta = Point::ZERO;
 
-    let music = app.load_music("spinning_rat.ogg");
+    let music = app.load_music("pgfx/res/spinning_rat.ogg");
     // let music_backwards = app.load_sound("tar_gninnips.ogg");
     // let sound = app.load_sound("/home/paul/pop.ogg");
     // let bark = app.load_sound("/home/paul/bark.ogg");
     app.play_music();
     // music_backwards.play_loop();
 
-    let s1 = app.load_sound("spinning_rat.ogg");
-    let s2 = app.load_sound("spinning_rat.ogg");
-    let s3 = app.load_sound("spinning_rat.ogg");
-    let s4 = app.load_sound("spinning_rat.ogg");
+    let s1 = app.load_sound("pgfx/res/spinning_rat.ogg");
+    let s2 = app.load_sound("pgfx/res/spinning_rat.ogg");
+    let s3 = app.load_sound("pgfx/res/spinning_rat.ogg");
+    let s4 = app.load_sound("pgfx/res/spinning_rat.ogg");
 
     let mut force_allocation = true;
     let mut alloc_count = 1000;

@@ -67,7 +67,9 @@ pub struct App<'a> {
     pub mouse_right_pressed: bool,
     pub mouse_middle_down: bool,
     pub mouse_middle_pressed: bool,
-    pub keys_down: Vec<Key>,
+
+    pub keys_down: Vec<bool>,
+    pub keys_pressed: Vec<bool>,
 
     // Control flow
     pub should_quit: bool,
@@ -143,6 +145,9 @@ impl<'a> App<'a> {
             gl::GenBuffers(1, &mut tri_buffer);
         }
 
+        let mut keys_down = vec![false; Key::Num as usize];
+        let mut keys_pressed = vec![false; Key::Num as usize];
+
         Self {
             sdl,
             char_width,
@@ -166,7 +171,8 @@ impl<'a> App<'a> {
             mouse_right_pressed: false,
             mouse_middle_down: false,
             mouse_middle_pressed: false,
-            keys_down: Vec::new(),
+            keys_down,
+            keys_pressed,
             should_quit: false,
             tri_buffer,
             tri_vertices: Vec::new(),
@@ -233,11 +239,16 @@ impl<'a> App<'a> {
 impl<'a> App<'a> {
 
     pub fn update(&mut self) {
+
         self.scroll.x = 0.0;
         self.scroll.y = 0.0;
         self.mouse_left_pressed = false;
         self.mouse_right_pressed = false;
         self.mouse_middle_pressed = false;
+        for v in &mut self.keys_pressed {
+            *v = false;
+        }
+
         for event in self.sdl.event_pump().unwrap().poll_iter() {
             match event {
                 Event::Quit { .. } => self.should_quit = true,
@@ -288,15 +299,28 @@ impl<'a> App<'a> {
                 }
                 Event::KeyDown { scancode, keymod, .. } => {
                     if let Some(scancode) = scancode {
-                        self.keys_down.push(Key::from_sdl(scancode));
+                        self.keys_down[Key::from_sdl(scancode) as usize] = true;
+                        self.keys_pressed[Key::from_sdl(scancode) as usize] = true;
                     }
                 }
                 Event::KeyUp { scancode, keymod, .. } => {
+                    if let Some(scancode) = scancode {
+                        self.keys_down[Key::from_sdl(scancode) as usize] = false;
+                    }
                 }
+
                 _ => (),
             }
         }
         // TODO
+    }
+
+    pub fn is_key_down(&self, key: Key) -> bool {
+        self.keys_down[key as usize]
+    }
+
+    pub fn is_key_pressed(&self, key: Key) -> bool {
+        self.keys_pressed[key as usize]
     }
 }
 
