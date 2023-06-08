@@ -1,7 +1,7 @@
 use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::mouse::MouseButton;
-use sdl2::mixer::{Channel, InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
+use sdl2::mixer::{Channel, InitFlag, AUDIO_S16LSB, AUDIO_F32LSB, DEFAULT_CHANNELS};
 use sdl2::AudioSubsystem;
 use sdl2::video::{GLProfile, Window, GLContext};
 use std::collections::HashMap;
@@ -106,6 +106,7 @@ impl<'a> App<'a> {
         let chunk_size = 1024;
         sdl2::mixer::open_audio(frequency, format, channels, chunk_size).unwrap();
         let _result = sdl2::mixer::allocate_channels(8);
+        println!("query spec => {:?}", sdl2::mixer::query_spec());
         
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
 
@@ -145,8 +146,8 @@ impl<'a> App<'a> {
             gl::GenBuffers(1, &mut tri_buffer);
         }
 
-        let mut keys_down = vec![false; Key::Num as usize];
-        let mut keys_pressed = vec![false; Key::Num as usize];
+        let keys_down = vec![false; Key::Num as usize];
+        let keys_pressed = vec![false; Key::Num as usize];
 
         Self {
             sdl,
