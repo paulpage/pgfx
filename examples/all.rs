@@ -42,7 +42,7 @@ fn main() {
 
     let mut force_allocation = true;
     let mut alloc_count = 1000;
-    while !app.should_quit {
+    while !app.should_quit() {
 let start = Instant::now();
 
         mouse_delta = app.mouse - last_mouse;
@@ -59,8 +59,6 @@ let start = Instant::now();
         }
 
         let start = Instant::now();
-
-        app.update();
 
         // if app.mouse_middle_pressed {
         //     println!("Hello middle");

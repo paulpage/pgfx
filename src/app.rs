@@ -20,7 +20,13 @@ use rusttype::{point, Font, Scale, PositionedGlyph};
 
 use super::types::{Rect, Color, Point};
 use super::opengl::{create_program, debug_callback};
-use super::keys::Key;
+// use super::keys::Key;
+
+use enum_map::{enum_map, Enum, EnumMap};
+
+use std::collections::HashSet;
+pub type Scancode = sdl2::keyboard::Scancode;
+pub type Key = sdl2::keyboard::Keycode;
 
 #[derive(PartialEq)]
 enum DrawType {
@@ -70,11 +76,13 @@ pub struct App<'a> {
     pub mouse_middle_down: bool,
     pub mouse_middle_pressed: bool,
 
-    pub keys_down: Vec<bool>,
-    pub keys_pressed: Vec<bool>,
-
-    // Control flow
-    pub should_quit: bool,
+    keys_down: HashSet<Key>,
+    keys_pressed: HashSet<Key>,
+    physical_keys_down: HashSet<Scancode>,
+    physical_keys_pressed: HashSet<Scancode>,
+    // pub keys_down: Vec<bool>,
+    // pub keys_pressed: Vec<bool>,
+    pub text_entered: Vec<String>,
 
     // Audio
     _stream: OutputStream,
@@ -140,9 +148,6 @@ impl<'a> App<'a> {
             gl::GenBuffers(1, &mut tri_buffer);
         }
 
-        let keys_down = vec![false; Key::Num as usize];
-        let keys_pressed = vec![false; Key::Num as usize];
-
         let (_stream, _stream_handle) = OutputStream::try_default().unwrap();
         let mut sinks = Vec::new();
         for i in 0..8 {
@@ -172,9 +177,13 @@ impl<'a> App<'a> {
             mouse_right_pressed: false,
             mouse_middle_down: false,
             mouse_middle_pressed: false,
-            keys_down,
-            keys_pressed,
-            should_quit: false,
+            keys_down: HashSet::new(),
+            keys_pressed: HashSet::new(),
+            physical_keys_down: HashSet::new(),
+            physical_keys_pressed: HashSet::new(),
+            // keys_down,
+            // keys_pressed,
+            text_entered: Vec::new(),
             tri_buffer,
             tri_vertices: Vec::new(),
             last_tri_vertices_len: 0,
@@ -240,20 +249,23 @@ impl<'a> App<'a> {
 
 impl<'a> App<'a> {
 
-    pub fn update(&mut self) {
+    pub fn should_quit(&mut self) -> bool {
+
+        let mut should_quit = false;
 
         self.scroll.x = 0.0;
         self.scroll.y = 0.0;
         self.mouse_left_pressed = false;
         self.mouse_right_pressed = false;
         self.mouse_middle_pressed = false;
-        for v in &mut self.keys_pressed {
-            *v = false;
-        }
+
+        self.text_entered.clear();
+        self.physical_keys_pressed.clear();
+        self.keys_pressed.clear();
 
         for event in self.sdl.event_pump().unwrap().poll_iter() {
             match event {
-                Event::Quit { .. } => self.should_quit = true,
+                Event::Quit { .. } => should_quit = true,
                 Event::Window { win_event, .. } => {
                     match win_event {
                         WindowEvent::Resized(width, height) => self.resize(width as f32, height as f32),
@@ -299,30 +311,55 @@ impl<'a> App<'a> {
                         _ => ()
                     }
                 }
-                Event::KeyDown { scancode, keymod, .. } => {
+                Event::KeyDown { keycode, scancode, keymod, .. } => {
                     if let Some(scancode) = scancode {
-                        self.keys_down[Key::from_sdl(scancode) as usize] = true;
-                        self.keys_pressed[Key::from_sdl(scancode) as usize] = true;
+                        self.physical_keys_down.insert(scancode);
+                        self.physical_keys_pressed.insert(scancode);
+                    }
+                    if let Some(keycode) = keycode {
+                        self.keys_down.insert(keycode);
+                        self.keys_pressed.insert(keycode);
+                    }
+                    // println!("keydown keycode={:?} scancode={:?} keymod={:?}", keycode, scancode, keymod);
+                    // if let Some(scancode) = scancode {
+                    //     self.keys_down[Key::from_sdl(scancode) as usize] = true;
+                    //     self.keys_pressed[Key::from_sdl(scancode) as usize] = true;
+                    // }
+                }
+                Event::KeyUp { keycode, scancode, keymod, .. } => {
+                    if let Some(scancode) = scancode {
+                        self.physical_keys_down.remove(&scancode);
+                    }
+                    if let Some(keycode) = keycode {
+                        self.keys_down.remove(&keycode);
                     }
                 }
-                Event::KeyUp { scancode, keymod, .. } => {
-                    if let Some(scancode) = scancode {
-                        self.keys_down[Key::from_sdl(scancode) as usize] = false;
-                    }
+                Event::TextInput { text, .. } => {
+                    self.text_entered.push(text);
                 }
 
                 _ => (),
             }
         }
         // TODO
+
+        should_quit
     }
 
     pub fn is_key_down(&self, key: Key) -> bool {
-        self.keys_down[key as usize]
+        self.keys_down.contains(&key)
     }
 
     pub fn is_key_pressed(&self, key: Key) -> bool {
-        self.keys_pressed[key as usize]
+        self.keys_pressed.contains(&key)
+    }
+
+    pub fn is_physical_key_down(&self, scancode: Scancode) -> bool {
+        self.physical_keys_down.contains(&scancode)
+    }
+
+    pub fn is_physical_key_pressed(&self, scancode: Scancode) -> bool {
+        self.physical_keys_pressed.contains(&scancode)
     }
 }
 
