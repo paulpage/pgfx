@@ -1,12 +1,15 @@
 use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::mouse::MouseButton;
-use sdl2::mixer::{Channel, InitFlag, AUDIO_S16LSB, AUDIO_F32LSB, DEFAULT_CHANNELS};
-use sdl2::AudioSubsystem;
 use sdl2::video::{GLProfile, Window, GLContext};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
+
+use std::fs::File;
+use std::io::BufReader;
+use rodio::{Decoder, decoder::LoopedDecoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::source::{Buffered, Source};
 
 use std::{ptr, mem};
 use gl::types::*;
@@ -33,7 +36,6 @@ pub struct App<'a> {
     pub sdl: Sdl,
     window: Window,
     gl_ctx: GLContext,
-    audio_subsys: AudioSubsystem,
 
     // OpenGL
     program: u32,
@@ -75,8 +77,10 @@ pub struct App<'a> {
     pub should_quit: bool,
 
     // Audio
-    music: Option<sdl2::mixer::Music<'a>>,
-    first_available_channel: i32,
+    _stream: OutputStream,
+    _stream_handle: OutputStreamHandle,
+    sinks: Vec<Sink>,
+    next_sink: usize,
 }
 
 impl<'a> App<'a> {
@@ -98,16 +102,6 @@ impl<'a> App<'a> {
         let gl_ctx = window.gl_create_context().unwrap();
         gl::load_with(|name| video_subsys.gl_get_proc_address(name) as *const _);
 
-        let audio_subsys = sdl.audio().unwrap();
-        let _mixer_context = sdl2::mixer::init(InitFlag::OGG).unwrap();
-        let frequency = 44_100;
-        let format = AUDIO_S16LSB;
-        let channels = DEFAULT_CHANNELS;
-        let chunk_size = 1024;
-        sdl2::mixer::open_audio(frequency, format, channels, chunk_size).unwrap();
-        let _result = sdl2::mixer::allocate_channels(8);
-        println!("query spec => {:?}", sdl2::mixer::query_spec());
-        
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
 
         unsafe {
@@ -149,6 +143,12 @@ impl<'a> App<'a> {
         let keys_down = vec![false; Key::Num as usize];
         let keys_pressed = vec![false; Key::Num as usize];
 
+        let (_stream, _stream_handle) = OutputStream::try_default().unwrap();
+        let mut sinks = Vec::new();
+        for i in 0..8 {
+            sinks.push(Sink::try_new(&_stream_handle).unwrap());
+        }
+
         Self {
             sdl,
             char_width,
@@ -180,10 +180,11 @@ impl<'a> App<'a> {
             last_tri_vertices_len: 0,
             tex_vertices: Vec::new(),
             text_entries: Vec::new(),
-            audio_subsys,
             last_draw_type: DrawType::Any,
-            first_available_channel: 0,
-            music: None,
+            _stream,
+            _stream_handle,
+            sinks,
+            next_sink: 0,
         }
     }
 
@@ -977,60 +978,34 @@ impl<'a> App<'a> {
 
 // Audio ============================================================
 
-impl<'a> App<'a> {
-    pub fn load_music(&mut self, path: &str) {
-        self.music = Some(sdl2::mixer::Music::from_file(path).unwrap());
-    }
-
-    pub fn play_music(&self) {
-        if let Some(music) = &self.music {
-            music.play(-1).unwrap();
-        }
-    }
-
-    pub fn pause_music(&self) {
-        if let Some(_music) = &self.music {
-            sdl2::mixer::Music::pause();
-        }
-    }
-
-    pub fn resume_music(&self) {
-        if let Some(_music) = &self.music {
-            sdl2::mixer::Music::resume();
-        }
-    }
-}
-
-pub struct Sound {
-    chunk: sdl2::mixer::Chunk,
-    channel: Channel,
-}
+pub type Sound = Buffered<LoopedDecoder<BufReader<File>>>;
 
 impl<'a> App<'a> {
     pub fn load_sound(&mut self, path: &str) -> Sound {
-        let sound = Sound {
-            chunk: sdl2::mixer::Chunk::from_file(path).unwrap(),
-            channel: Channel(self.first_available_channel),
-        };
-        self.first_available_channel += 1;
-        sound
-    }
-}
-
-impl Sound {
-    pub fn play(&self) {
-        self.channel.play(&self.chunk, 0).unwrap();
+        let f = BufReader::new(File::open(path).unwrap());
+        Decoder::new_looped(f).unwrap().buffered()
     }
 
-    pub fn play_loop(&self) {
-        self.channel.play(&self.chunk, -1).unwrap();
+    pub fn play_music(&mut self, sound: &Sound) {
+        self.sinks[0].clear();
+        self.sinks[0].append(sound.clone().repeat_infinite());
     }
 
-    pub fn pause(&self) {
-        self.channel.pause();
+    pub fn pause_music(&mut self) {
+        self.sinks[0].pause();
     }
 
-    pub fn resume(&self) {
-        self.channel.resume();
+    pub fn resume_music(&mut self) {
+        self.sinks[0].play();
+    }
+
+    pub fn play_sound(&mut self, sound: &Sound) {
+        // TODO detect free sinks
+        let sink_idx = self.next_sink;
+        self.next_sink += 1;
+        if self.next_sink == 8 {
+            self.next_sink = 1;
+        }
+        self.sinks[sink_idx].append(sound.clone());
     }
 }

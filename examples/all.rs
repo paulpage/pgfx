@@ -1,7 +1,6 @@
 use pgfx::app::{App, Texture, Sound};
 use pgfx::types::{Rect, Color, Point};
 use std::time::{Duration, Instant};
-use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 use rand::Rng;
 
 fn main() {
@@ -35,17 +34,11 @@ fn main() {
     let mut last_mouse = Point::ZERO;
     let mut mouse_delta = Point::ZERO;
 
-    let music = app.load_music("pgfx/res/spinning_rat.ogg");
-    // let music_backwards = app.load_sound("tar_gninnips.ogg");
-    // let sound = app.load_sound("/home/paul/pop.ogg");
-    // let bark = app.load_sound("/home/paul/bark.ogg");
-    app.play_music();
-    // music_backwards.play_loop();
+    let music = app.load_sound("pgfx/res/spinning_rat.ogg");
+    app.play_music(&music);
 
-    let s1 = app.load_sound("pgfx/res/spinning_rat.ogg");
-    let s2 = app.load_sound("pgfx/res/spinning_rat.ogg");
-    let s3 = app.load_sound("pgfx/res/spinning_rat.ogg");
-    let s4 = app.load_sound("pgfx/res/spinning_rat.ogg");
+    let s1 = app.load_sound("res/tweet.ogg");
+    let s2 = app.load_sound("res/tweet.ogg");
 
     let mut force_allocation = true;
     let mut alloc_count = 1000;
@@ -94,22 +87,14 @@ let start = Instant::now();
         }
 
         if app.mouse_right_pressed {
-            // music_backwards.resume();
+            app.play_sound(&s1);
         }
         if app.mouse_left_pressed {
             app.resume_music();
         }
-        // if app.mouse_right_pressed || app.mouse_left_pressed {
-        //     music.resume();
-        // }
         if !app.mouse_right_down && !app.mouse_left_down {
             app.pause_music();
-            // music_backwards.pause();
         }
-
-        // if app.mouse_middle_pressed {
-        //     bark.play();
-        // }
 
         // for i in 0..rect_count {
         //     app.draw_rotated_rect(rects[i], colors[i], Point::new(rects[i].width as i32 / 2, rects[i].height as i32 / 2), rotations[i]);
