@@ -21,6 +21,10 @@ fn main() {
             println!("{}", s);
         }
 
+        for key in &app.keys_pressed {
+            println!("{}", app.get_key_string(key));
+        }
+
         app.present();
     }
 }

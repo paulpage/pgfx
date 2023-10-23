@@ -2,6 +2,7 @@ use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::mouse::MouseButton;
 use sdl2::video::{GLProfile, Window, GLContext};
+use sdl2::keyboard::Mod;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::path::Path;
@@ -76,12 +77,13 @@ pub struct App<'a> {
     pub mouse_middle_down: bool,
     pub mouse_middle_pressed: bool,
 
-    keys_down: HashSet<Key>,
-    keys_pressed: HashSet<Key>,
-    physical_keys_down: HashSet<Scancode>,
-    physical_keys_pressed: HashSet<Scancode>,
-    // pub keys_down: Vec<bool>,
-    // pub keys_pressed: Vec<bool>,
+    pub keys_down: HashSet<Key>,
+    pub keys_pressed: HashSet<Key>,
+    pub physical_keys_down: HashSet<Scancode>,
+    pub physical_keys_pressed: HashSet<Scancode>,
+    pub ctrl_pressed: bool,
+    pub alt_pressed: bool,
+    pub shift_pressed: bool,
     pub text_entered: Vec<String>,
 
     // Audio
@@ -181,8 +183,9 @@ impl<'a> App<'a> {
             keys_pressed: HashSet::new(),
             physical_keys_down: HashSet::new(),
             physical_keys_pressed: HashSet::new(),
-            // keys_down,
-            // keys_pressed,
+            ctrl_pressed: false,
+            alt_pressed: false,
+            shift_pressed: false,
             text_entered: Vec::new(),
             tri_buffer,
             tri_vertices: Vec::new(),
@@ -312,6 +315,15 @@ impl<'a> App<'a> {
                     }
                 }
                 Event::KeyDown { keycode, scancode, keymod, .. } => {
+                    if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
+                        self.ctrl_pressed = true;
+                    }
+                    if keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD) {
+                        self.alt_pressed = true;
+                    }
+                    if keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD) {
+                        self.shift_pressed = true;
+                    }
                     if let Some(scancode) = scancode {
                         self.physical_keys_down.insert(scancode);
                         self.physical_keys_pressed.insert(scancode);
@@ -320,13 +332,17 @@ impl<'a> App<'a> {
                         self.keys_down.insert(keycode);
                         self.keys_pressed.insert(keycode);
                     }
-                    // println!("keydown keycode={:?} scancode={:?} keymod={:?}", keycode, scancode, keymod);
-                    // if let Some(scancode) = scancode {
-                    //     self.keys_down[Key::from_sdl(scancode) as usize] = true;
-                    //     self.keys_pressed[Key::from_sdl(scancode) as usize] = true;
-                    // }
                 }
                 Event::KeyUp { keycode, scancode, keymod, .. } => {
+                    if !(keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD)) {
+                        self.ctrl_pressed = false;
+                    }
+                    if !(keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD)) {
+                        self.alt_pressed = false;
+                    }
+                    if !(keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD)) {
+                        self.shift_pressed = false;
+                    }
                     if let Some(scancode) = scancode {
                         self.physical_keys_down.remove(&scancode);
                     }
@@ -360,6 +376,21 @@ impl<'a> App<'a> {
 
     pub fn is_physical_key_pressed(&self, scancode: Scancode) -> bool {
         self.physical_keys_pressed.contains(&scancode)
+    }
+
+    pub fn get_key_string(&self, key: &Key) -> String {
+        let mut kstr = String::new();
+        if self.ctrl_pressed {
+            kstr.push_str("c-");
+        }
+        if self.alt_pressed {
+            kstr.push_str("a-");
+        }
+        if self.shift_pressed {
+            kstr.push_str("s-");
+        }
+        kstr.push_str(&key.to_string().to_ascii_lowercase());
+        kstr
     }
 }
 
