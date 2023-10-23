@@ -21,15 +21,13 @@ use rusttype::{point, Font, Scale, PositionedGlyph};
 
 use super::types::{Rect, Color, Point};
 use super::opengl::{create_program, debug_callback};
-// use super::keys::Key;
-
-use enum_map::{enum_map, Enum, EnumMap};
 
 use std::collections::HashSet;
 pub type Scancode = sdl2::keyboard::Scancode;
 pub type Key = sdl2::keyboard::Keycode;
 
 #[derive(PartialEq)]
+#[allow(dead_code)]
 enum DrawType {
     Any,
     Triangles,
@@ -42,7 +40,7 @@ pub struct App<'a> {
     // SDL
     pub sdl: Sdl,
     window: Window,
-    gl_ctx: GLContext,
+    _gl_ctx: GLContext,
 
     // OpenGL
     program: u32,
@@ -60,6 +58,11 @@ pub struct App<'a> {
     // Window
     pub window_width: f32,
     pub window_height: f32,
+    pub window_size_changed: bool,
+
+    // Events
+    pub has_events: bool,
+    quit_requested: bool,
 
     // Text
     pub char_width: f32,
@@ -72,10 +75,13 @@ pub struct App<'a> {
     pub scroll: Point,
     pub mouse_left_down: bool,
     pub mouse_left_pressed: bool,
+    pub mouse_left_clicks: u8,
     pub mouse_right_down: bool,
     pub mouse_right_pressed: bool,
+    pub mouse_right_clicks: u8,
     pub mouse_middle_down: bool,
     pub mouse_middle_pressed: bool,
+    pub mouse_middle_clicks: u8,
 
     pub keys_down: HashSet<Key>,
     pub keys_pressed: HashSet<Key>,
@@ -109,7 +115,7 @@ impl<'a> App<'a> {
             .opengl()
             .build()
             .unwrap();
-        let gl_ctx = window.gl_create_context().unwrap();
+        let _gl_ctx = window.gl_create_context().unwrap();
         gl::load_with(|name| video_subsys.gl_get_proc_address(name) as *const _);
 
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
@@ -152,33 +158,39 @@ impl<'a> App<'a> {
 
         let (_stream, _stream_handle) = OutputStream::try_default().unwrap();
         let mut sinks = Vec::new();
-        for i in 0..8 {
+        for _ in 0..8 {
             sinks.push(Sink::try_new(&_stream_handle).unwrap());
         }
 
         Self {
             sdl,
             char_width,
-            font_size: font_size,
+            font_size,
             window_width: 800.0,
             window_height: 600.0,
+            window_size_changed: false,
             font,
             font_cache: HashMap::new(),
             window,
-            gl_ctx,
+            _gl_ctx,
             program,
             program_2d,
             program_text,
             program_texture,
             uniforms,
+            has_events: true,
+            quit_requested: false,
             mouse: Point::new(0.0, 0.0),
             scroll: Point::new(0.0, 0.0),
             mouse_left_down: false,
             mouse_left_pressed: false,
+            mouse_left_clicks: 0,
             mouse_right_down: false,
             mouse_right_pressed: false,
+            mouse_right_clicks: 0,
             mouse_middle_down: false,
             mouse_middle_pressed: false,
+            mouse_middle_clicks: 0,
             keys_down: HashSet::new(),
             keys_pressed: HashSet::new(),
             physical_keys_down: HashSet::new(),
@@ -201,6 +213,7 @@ impl<'a> App<'a> {
     }
 
     pub fn resize(&mut self, width: f32, height: f32) {
+        self.window_size_changed = true;
         self.window_width = width;
         self.window_height = height;
         unsafe {
@@ -254,26 +267,29 @@ impl<'a> App<'a> {
 
     pub fn should_quit(&mut self) -> bool {
 
-        let mut should_quit = false;
+        let mut should_quit = self.quit_requested;
+        self.has_events = false;
+        self.window_size_changed = false;
 
         self.scroll.x = 0.0;
         self.scroll.y = 0.0;
         self.mouse_left_pressed = false;
         self.mouse_right_pressed = false;
         self.mouse_middle_pressed = false;
+        self.mouse_left_clicks = 0;
+        self.mouse_right_clicks = 0;
+        self.mouse_middle_clicks = 0;
 
         self.text_entered.clear();
         self.physical_keys_pressed.clear();
         self.keys_pressed.clear();
 
         for event in self.sdl.event_pump().unwrap().poll_iter() {
+            self.has_events = true;
             match event {
                 Event::Quit { .. } => should_quit = true,
-                Event::Window { win_event, .. } => {
-                    match win_event {
-                        WindowEvent::Resized(width, height) => self.resize(width as f32, height as f32),
-                        _ => (),
-                    }
+                Event::Window { win_event: WindowEvent::Resized(width, height), .. } => {
+                    self.resize(width as f32, height as f32);
                 }
                 Event::MouseWheel { x, y, .. } => {
                     self.scroll.x += x as f32 * 10.0;
@@ -297,19 +313,22 @@ impl<'a> App<'a> {
                         _ => ()
                     }
                 }
-                Event::MouseButtonDown { mouse_btn, .. } => {
+                Event::MouseButtonDown { mouse_btn, clicks, .. } => {
                     match mouse_btn {
                         MouseButton::Left => {
                             self.mouse_left_pressed = true;
                             self.mouse_left_down = true;
+                            self.mouse_left_clicks = clicks;
                         }
                         MouseButton::Right => {
                             self.mouse_right_pressed = true;
                             self.mouse_right_down = true;
+                            self.mouse_right_clicks = clicks;
                         }
                         MouseButton::Middle => {
                             self.mouse_middle_pressed = true;
                             self.mouse_middle_down = true;
+                            self.mouse_middle_clicks = clicks;
                         }
                         _ => ()
                     }
@@ -360,6 +379,10 @@ impl<'a> App<'a> {
         // TODO
 
         should_quit
+    }
+
+    pub fn quit(&mut self) {
+        self.quit_requested = true;
     }
 
     pub fn is_key_down(&self, key: Key) -> bool {
@@ -429,14 +452,14 @@ fn get_rect_vertices(rect: Rect, origin: Point, rotation: f32, window_width: f32
     };
 
     [
-        x1 * 2.0 / window_width as f32 - 1.0,
-        x2 * 2.0 / window_width as f32 - 1.0,
-        x3 * 2.0 / window_width as f32 - 1.0,
-        x4 * 2.0 / window_width as f32 - 1.0,
-        1.0 - y1 * 2.0 / window_height as f32,
-        1.0 - y2 * 2.0 / window_height as f32,
-        1.0 - y3 * 2.0 / window_height as f32,
-        1.0 - y4 * 2.0 / window_height as f32,
+        x1 * 2.0 / window_width - 1.0,
+        x2 * 2.0 / window_width - 1.0,
+        x3 * 2.0 / window_width - 1.0,
+        x4 * 2.0 / window_width - 1.0,
+        1.0 - y1 * 2.0 / window_height,
+        1.0 - y2 * 2.0 / window_height,
+        1.0 - y3 * 2.0 / window_height,
+        1.0 - y4 * 2.0 / window_height,
     ]
 }
 
@@ -479,7 +502,7 @@ impl<'a> App<'a> {
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
 
-            gl::DeleteVertexArrays(1, &mut vao_2d);
+            gl::DeleteVertexArrays(1, &vao_2d);
         }
 
         self.last_tri_vertices_len = self.tri_vertices.len();
@@ -602,8 +625,8 @@ impl<'a> App<'a> {
             gl::BindVertexArray(0);
         }
         unsafe {
-            gl::DeleteBuffers(1, &mut vbo);
-            gl::DeleteVertexArrays(1, &mut vao);
+            gl::DeleteBuffers(1, &vbo);
+            gl::DeleteVertexArrays(1, &vao);
             // gl::DeleteTextures(1, &mut id);
         }
         self.tex_vertices.clear();
@@ -698,8 +721,8 @@ impl<'a> App<'a> {
             }
 
             unsafe {
-                gl::DeleteBuffers(1, &mut vbo);
-                gl::DeleteVertexArrays(1, &mut vao);
+                gl::DeleteBuffers(1, &vbo);
+                gl::DeleteVertexArrays(1, &vao);
                 // gl::DeleteTextures(1, id);
                 // gl::DeleteProgram(program);
             }
@@ -718,7 +741,7 @@ impl<'a> App<'a> {
         let width = glyphs
             .iter()
             .rev()
-            .map(|g| g.position().x as f32 + g.unpositioned().h_metrics().advance_width)
+            .map(|g| g.position().x + g.unpositioned().h_metrics().advance_width)
             .next()
             .unwrap_or(0.0)
             .ceil() as usize;
@@ -850,6 +873,12 @@ pub struct Camera {
     pub fovy: f32,
 }
 
+impl Default for Camera {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Camera {
     pub fn new() -> Self {
         Self {
@@ -919,12 +948,14 @@ pub struct Uniforms {
     light_specular: GLint,
 }
 
+#[allow(dead_code)]
 fn unproject(source: Vector3<f32>, view: Matrix4<f32>, proj: Matrix4<f32>) -> Vector3<f32> {
     let view_proj = (proj * view).invert().unwrap();
     let q = view_proj * Vector4::new(source.x, source.y, source.z, 1.0);
     Vector3::new(q.x / q.w, q.y / q.w, q.z / q.w)
 }
 
+#[allow(dead_code)]
 fn get_mouse_ray(aspect_ratio: f32, mouse_position: Vector2<f32>, camera: &Camera) -> (Point3<f32>, Vector3<f32>) {
     let view = Matrix4::look_at_rh(camera.position(), camera.focus, Vector3::new(0.0, 1.0, 0.0));
     let proj = cgmath::perspective(Deg(camera.fovy), aspect_ratio, 0.01, 100.0);
@@ -956,7 +987,8 @@ impl<'a> App<'a> {
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                // (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                mem::size_of_val(vertices) as GLsizeiptr,  // TODO clippy told me this works
                 vertices.as_ptr() as *const _,
                 gl::STATIC_DRAW
             );

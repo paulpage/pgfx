@@ -1,13 +1,5 @@
 use std::ops;
 
-fn min(a: f32, b: f32) -> f32 {
-    if a < b { a } else { b }
-}
-
-fn max(a: f32, b: f32) -> f32 {
-    if a > b { a } else { b }
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct Point {
     pub x: f32,
@@ -71,13 +63,12 @@ impl Rect {
         if other.width == 0.0 || other.height == 0.0 {
             return *self;
         }
-        let r = Rect {
-            x: min(self.x, other.x),
-            y: min(self.y, other.y),
-            width: max(self.x + self.width, other.x + other.width) - min(self.x, other.x),
-            height: max(self.y + self.height, other.y + other.height) - min(self.y, other.y),
-        };
-        return r;
+        Rect {
+            x: f32::min(self.x, other.x),
+            y: f32::min(self.y, other.y),
+            width: f32::max(self.x + self.width, other.x + other.width) - f32::min(self.x, other.x),
+            height: f32::max(self.y + self.height, other.y + other.height) - f32::min(self.y, other.y),
+        }
     }
 
     pub fn has_intersection(&self, other: Rect) -> bool {
@@ -90,10 +81,10 @@ impl Rect {
             return Rect::new(0.0, 0.0, 0.0, 0.0);
         }
         Rect {
-            x: max(self.x, other.x),
-            y: max(self.y, other.y),
-            width: min(self.x + self.width, other.x + other.width) - max(self.x, other.x),
-            height: min(self.y + self.height, other.y + other.height) - max(self.y, other.y),
+            x: f32::max(self.x, other.x),
+            y: f32::max(self.y, other.y),
+            width: f32::min(self.x + self.width, other.x + other.width) - f32::max(self.x, other.x),
+            height: f32::min(self.y + self.height, other.y + other.height) - f32::max(self.y, other.y),
         }
     }
 }
