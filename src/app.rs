@@ -1,7 +1,7 @@
 use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::mouse::MouseButton;
-use sdl2::video::{GLProfile, Window, GLContext};
+use sdl2::video::{GLProfile, Window, GLContext, SwapInterval};
 use sdl2::keyboard::Mod;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -49,6 +49,7 @@ pub struct App<'a> {
     program_texture: u32,
     uniforms: Uniforms,
     tri_buffer: u32,
+    text_buffer: u32,
     tri_vertices: Vec<f32>,
     last_tri_vertices_len: usize,
     tex_vertices: Vec<f32>,
@@ -68,7 +69,7 @@ pub struct App<'a> {
     pub char_width: f32,
     pub font_size: f32,
     pub font: Font<'a>,
-    font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
+    font_cache: HashMap<String, Rc<FontCacheEntry>>,
 
     // Input
     pub mouse: Point,
@@ -116,9 +117,9 @@ impl<'a> App<'a> {
             .build()
             .unwrap();
         let _gl_ctx = window.gl_create_context().unwrap();
-        gl::load_with(|name| video_subsys.gl_get_proc_address(name) as *const _);
-
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
+
+        // video_subsys.gl_set_swap_interval(SwapInterval::Immediate);
 
         unsafe {
             gl::Enable(gl::DEBUG_OUTPUT);
@@ -152,8 +153,19 @@ impl<'a> App<'a> {
             }
         };
         let mut tri_buffer = 0;
+        let mut text_buffer = 0;
         unsafe {
             gl::GenBuffers(1, &mut tri_buffer);
+            gl::GenBuffers(1, &mut text_buffer);
+
+            let init_text_vertices = [0.0; 48];
+            gl::BindBuffer(gl::ARRAY_BUFFER, text_buffer);
+            gl::BufferData(
+                gl::ARRAY_BUFFER,
+                (init_text_vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                init_text_vertices.as_ptr() as *const _,
+                gl::DYNAMIC_DRAW,
+            );
         }
 
         let (_stream, _stream_handle) = OutputStream::try_default().unwrap();
@@ -200,6 +212,7 @@ impl<'a> App<'a> {
             shift_pressed: false,
             text_entered: Vec::new(),
             tri_buffer,
+            text_buffer,
             tri_vertices: Vec::new(),
             last_tri_vertices_len: 0,
             tex_vertices: Vec::new(),
@@ -291,9 +304,9 @@ impl<'a> App<'a> {
                 Event::Window { win_event: WindowEvent::Resized(width, height), .. } => {
                     self.resize(width as f32, height as f32);
                 }
-                Event::MouseWheel { x, y, .. } => {
-                    self.scroll.x += x as f32 * 10.0;
-                    self.scroll.y += y as f32 * 10.0;
+                Event::MouseWheel { precise_x, precise_y, .. } => {
+                    self.scroll.x += precise_x as f32;
+                    self.scroll.y += precise_y as f32;
                 }
                 Event::MouseMotion { x, y, .. } => {
                     self.mouse.x = x as f32;
@@ -332,6 +345,9 @@ impl<'a> App<'a> {
                         }
                         _ => ()
                     }
+                }
+                Event::MultiGesture { x, y, .. } => {
+                    println!("multigesture {x} {y}");
                 }
                 Event::KeyDown { keycode, scancode, keymod, .. } => {
                     if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
@@ -660,49 +676,43 @@ impl<'a> App<'a> {
 
 // Text ============================================================
 
-// TODO does this need size included?
-#[derive(Hash, PartialEq)]
-struct FontCacheKey {
-    c: String,
-    color: Color,
-}
-
 struct FontCacheEntry {
     texture_id: u32,
     width: i32,
     height: i32,
 }
 
-impl Eq for FontCacheKey {}
-
-
 impl<'a> App<'a> {
 
     pub fn flush_text(&mut self) {
-        for (id, vertices) in &self.text_entries {
-            let (mut vao, mut vbo) = (0, 0);
-            unsafe {
 
-                gl::ActiveTexture(gl::TEXTURE0);
+        let mut vao = 0;
+        unsafe {
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            gl::Disable(gl::DEPTH_TEST);
+
+            gl::UseProgram(self.program_text);
+            let uniform = gl::GetUniformLocation(self.program_text, b"tex\0".as_ptr() as *const _);
+            gl::Uniform1i(uniform, 0);
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.text_buffer);
+        }
+
+        for (id, vertices) in &self.text_entries {
+            unsafe {
                 gl::BindTexture(gl::TEXTURE_2D, *id);
 
-                gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                gl::Disable(gl::DEPTH_TEST);
-
-
-                gl::GenVertexArrays(1, &mut vao);
-                gl::GenBuffers(1, &mut vbo);
-                gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-                gl::BufferData(
+                gl::BufferSubData(
                     gl::ARRAY_BUFFER,
+                    0,
                     (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
                     vertices.as_ptr() as *const _,
-                    gl::STATIC_DRAW
                 );
+
+                gl::GenVertexArrays(1, &mut vao);
                 gl::BindVertexArray(vao);
                 let stride = 8 * mem::size_of::<GLfloat>() as GLsizei;
-
-
                 gl::EnableVertexAttribArray(0);
                 gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
                 gl::EnableVertexAttribArray(1);
@@ -710,23 +720,17 @@ impl<'a> App<'a> {
                 gl::EnableVertexAttribArray(2);
                 gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (4 * mem::size_of::<GLfloat>()) as *const _);
 
-                gl::UseProgram(self.program_text);
-                let uniform = gl::GetUniformLocation(self.program_text, b"tex\0".as_ptr() as *const _);
-                gl::Uniform1i(uniform, 0);
-
                 gl::DrawArrays(gl::TRIANGLES, 0, vertices.len() as GLsizei / 8);
 
-                gl::BindBuffer(gl::ARRAY_BUFFER, 0);
                 gl::BindVertexArray(0);
-            }
-
-            unsafe {
-                gl::DeleteBuffers(1, &vbo);
                 gl::DeleteVertexArrays(1, &vao);
-                // gl::DeleteTextures(1, id);
-                // gl::DeleteProgram(program);
             }
         }
+
+        unsafe {
+            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+        }
+
         self.text_entries.clear();
     }
 
@@ -753,10 +757,7 @@ impl<'a> App<'a> {
         let input_x = x;
         let input_y = y;
 
-        let key = FontCacheKey {
-            c: text.to_string(),
-            color,
-        };
+        let key = text.to_string();
 
         let tex = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
             let (glyphs, glyphs_width, glyphs_height) = self.layout_text(text, scale);

@@ -13,7 +13,10 @@ stb_image = "0.2.4"
 rodio = { version = "0.17.2", default-features = false, features = ["wav", "vorbis"] }
 
 [dependencies.sdl2]
-version = "0.35.2"
+# version = "0.35.2"
+# Using git for now because 0.35.2 was released in February of 2022, and I need the precise scrolling events that have been added since then.
+git = "https://github.com/Rust-SDL2/rust-sdl2"
+rev = "77c1eb48e5e1213d1ba606c8b41c0409fa84734d"
 features = ["unsafe_textures", "bundled", "static-link"]
 
 [dev-dependencies]
