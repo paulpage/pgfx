@@ -15,7 +15,6 @@ use rodio::source::{Buffered, Source};
 use std::{ptr, mem};
 use gl::types::*;
 use stb_image::{self, image::LoadResult};
-use cgmath::{Matrix4, Vector2, Deg, Vector3, Point3, SquareMatrix, Vector4};
 
 use rusttype::{point, Font, Scale, PositionedGlyph};
 
@@ -32,7 +31,6 @@ enum DrawType {
     Any,
     Triangles,
     Textures(u32),
-    Models,
     Text,
 }
 
@@ -43,11 +41,9 @@ pub struct App<'a> {
     _gl_ctx: GLContext,
 
     // OpenGL
-    program: u32,
     program_2d: u32,
     program_text: u32,
     program_texture: u32,
-    uniforms: Uniforms,
     tri_buffer: u32,
     text_buffer: u32,
     tri_vertices: Vec<f32>,
@@ -127,7 +123,6 @@ impl<'a> App<'a> {
             gl::Enable(gl::BLEND);
         }
 
-        let program = create_program(include_str!("shaders/3d.vert"), include_str!("shaders/3d.frag"));
         let program_2d = create_program(include_str!("shaders/2d.vert"), include_str!("shaders/2d.frag"));
         let program_text = create_program(include_str!("shaders/text.vert"), include_str!("shaders/text.frag"));
         let program_texture = create_program(include_str!("shaders/texture.vert"), include_str!("shaders/texture.frag"));
@@ -139,19 +134,6 @@ impl<'a> App<'a> {
 
         let char_width = font.glyph('o').scaled(Scale::uniform(font_size)).h_metrics().advance_width;
 
-        let uniforms = unsafe {
-            Uniforms {
-                world: gl::GetUniformLocation(program, b"world\0".as_ptr() as *const _),
-                view: gl::GetUniformLocation(program, b"view\0".as_ptr() as *const _),
-                proj: gl::GetUniformLocation(program, b"proj\0".as_ptr() as *const _),
-                view_position: gl::GetUniformLocation(program, b"view_position\0".as_ptr() as *const _),
-                light_position: gl::GetUniformLocation(program, b"light.position\0".as_ptr() as *const _),
-                light_direction: gl::GetUniformLocation(program, b"light.direction\0".as_ptr() as *const _),
-                light_ambient: gl::GetUniformLocation(program, b"light.ambient\0".as_ptr() as *const _),
-                light_diffuse: gl::GetUniformLocation(program, b"light.diffuse\0".as_ptr() as *const _),
-                light_specular: gl::GetUniformLocation(program, b"light.specular\0".as_ptr() as *const _),
-            }
-        };
         let mut tri_buffer = 0;
         let mut text_buffer = 0;
         unsafe {
@@ -185,11 +167,9 @@ impl<'a> App<'a> {
             font_cache: HashMap::new(),
             window,
             _gl_ctx,
-            program,
             program_2d,
             program_text,
             program_texture,
-            uniforms,
             has_events: true,
             quit_requested: false,
             mouse: Point::new(0.0, 0.0),
@@ -259,7 +239,6 @@ impl<'a> App<'a> {
         match self.last_draw_type {
             DrawType::Triangles => self.flush_triangles(),
             DrawType::Textures(texture_id) => self.flush_textures(texture_id),
-            DrawType::Models => self.flush_models(),
             DrawType::Text => self.flush_text(),
             DrawType::Any => (),
         }
@@ -862,219 +841,6 @@ impl<'a> App<'a> {
         };
         self.font_size = size;
     }
-}
-
-// Models ============================================================
-
-pub struct Camera {
-    pub focus: Point3<f32>,
-    pub distance: f32,
-    pub rot_horizontal: f32,
-    pub rot_vertical: f32,
-    pub fovy: f32,
-}
-
-impl Default for Camera {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Camera {
-    pub fn new() -> Self {
-        Self {
-            focus: Point3::new(0.0, 0.0, 0.0),
-            distance: 10.0,
-            rot_horizontal: 0.5,
-            rot_vertical: 0.5,
-            fovy: 45.0,
-        }
-    }
-
-    pub fn rotate(&mut self, horizontal: f32, vertical: f32) {
-        self.rot_horizontal += horizontal;
-        self.rot_vertical += vertical;
-        if self.rot_vertical < 0.001 {
-            self.rot_vertical = 0.001;
-        }
-        if self.rot_vertical > std::f32::consts::PI {
-            self.rot_vertical = std::f32::consts::PI - 0.001;
-        }
-    }
-
-    pub fn position(&self) -> Point3<f32> {
-        Point3::new(
-            self.focus.z + self.distance * self.rot_vertical.sin() * self.rot_horizontal.sin(),
-            self.focus.y + self.distance * self.rot_vertical.cos(),
-            self.focus.x + self.distance * self.rot_vertical.sin() * self.rot_horizontal.cos()
-        )
-    }
-}
-
-pub struct Model {
-    pub vao: u32,
-    pub vertex_buffer_length: i32,
-    pub position: Vector3<f32>,
-    pub rotation: Vector3<f32>,
-    pub transform: Matrix4<f32>,
-    pub position_offset: Vector3<f32>,
-    pub rotation_offset: Vector3<f32>,
-    pub bounding_box: BoundingBox,
-}
-
-impl Model {
-    pub fn set_transform(&mut self) {
-        let position = Vector3::new(self.position.x * 0.5, self.position.y * 0.2, self.position.z * 0.5);
-        self.transform = Matrix4::from_translation(position - self.position_offset)
-            * Matrix4::from_angle_x(Deg((self.rotation.x * 90.0) - self.rotation_offset.x))
-            * Matrix4::from_angle_y(Deg((self.rotation.y * 90.0) - self.rotation_offset.y))
-            * Matrix4::from_angle_z(Deg((self.rotation.z * 90.0) - self.rotation_offset.z))
-    }
-}
-
-pub struct BoundingBox {
-    pub min: Point3<f32>,
-    pub max: Point3<f32>,
-}
-
-pub struct Uniforms {
-    world: GLint,
-    view: GLint,
-    proj: GLint,
-    view_position: GLint,
-    light_position: GLint,
-    light_direction: GLint,
-    light_ambient: GLint,
-    light_diffuse: GLint,
-    light_specular: GLint,
-}
-
-#[allow(dead_code)]
-fn unproject(source: Vector3<f32>, view: Matrix4<f32>, proj: Matrix4<f32>) -> Vector3<f32> {
-    let view_proj = (proj * view).invert().unwrap();
-    let q = view_proj * Vector4::new(source.x, source.y, source.z, 1.0);
-    Vector3::new(q.x / q.w, q.y / q.w, q.z / q.w)
-}
-
-#[allow(dead_code)]
-fn get_mouse_ray(aspect_ratio: f32, mouse_position: Vector2<f32>, camera: &Camera) -> (Point3<f32>, Vector3<f32>) {
-    let view = Matrix4::look_at_rh(camera.position(), camera.focus, Vector3::new(0.0, 1.0, 0.0));
-    let proj = cgmath::perspective(Deg(camera.fovy), aspect_ratio, 0.01, 100.0);
-    let near = unproject(Vector3::new(mouse_position.x, mouse_position.y, 0.0), view, proj);
-    let far = unproject(Vector3::new(mouse_position.x, mouse_position.y, 1.0), view, proj);
-    let direction = far - near;
-    (camera.position(), direction)
-}
-
-impl<'a> App<'a> {
-
-    pub fn flush_models(&mut self) {
-        // TODO
-    }
-
-    pub fn start_3d(&self) {
-        unsafe {
-            gl::UseProgram(self.program);
-        }
-    }
-
-    pub fn load_model(&mut self, vertices: &[f32]) -> (u32, i32) {
-        // TODO there is no "unload_model" right now because this is meant to be run once for each
-        // model, and all the memory can be cleaned up when the program exits.
-        let (mut vao, mut vbo) = (0, 0);
-        unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                // (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                mem::size_of_val(vertices) as GLsizeiptr,  // TODO clippy told me this works
-                vertices.as_ptr() as *const _,
-                gl::STATIC_DRAW
-            );
-            gl::BindVertexArray(vao);
-            let stride = 10 * mem::size_of::<GLfloat>() as GLsizei;
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<GLfloat>()) as *const _);
-            gl::EnableVertexAttribArray(2);
-            gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (6 * mem::size_of::<GLfloat>()) as *const _);
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-        }
-        (vao, vertices.len() as i32)
-    }
-
-
-    pub fn draw_model(&self, vao: GLuint, vertex_buffer_length: i32, world: [f32; 16], view: [f32; 16], proj: [f32; 16], view_position: [f32; 3], light: [f32; 15]) {
-        unsafe {
-            gl::Enable(gl::DEPTH_TEST);
-            gl::BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
-            // gl::UseProgram(self.program);
-
-            gl::UniformMatrix4fv(self.uniforms.world, 1, gl::FALSE, world.as_ptr());
-            gl::UniformMatrix4fv(self.uniforms.view, 1, gl::FALSE, view.as_ptr());
-            gl::UniformMatrix4fv(self.uniforms.proj, 1, gl::FALSE, proj.as_ptr());
-            gl::Uniform3f(self.uniforms.view_position, view_position[0], view_position[1], view_position[2]);
-            gl::Uniform3f(self.uniforms.light_position, light[0], light[1], light[2]);
-            gl::Uniform3f(self.uniforms.light_direction, light[3], light[4], light[5]);
-            gl::Uniform3f(self.uniforms.light_ambient, light[6], light[7], light[8]);
-            gl::Uniform3f(self.uniforms.light_diffuse, light[9], light[10], light[11]);
-            gl::Uniform3f(self.uniforms.light_specular, light[12], light[13], light[14]);
-
-            gl::BindVertexArray(vao);
-            // TODO make sure this is passing in the vertex count, not byte or float count
-            gl::DrawArrays(gl::TRIANGLES, 0, vertex_buffer_length as GLsizei);
-            // gl::BindVertexArray(0);
-            gl::Disable(gl::DEPTH_TEST);
-        }
-    }
-
-    // pub fn draw_bounding_box(&self, a: [f32; 3], b: [f32; 3], world: [f32; 16], view: [f32; 16], proj: [f32; 16], view_position: [f32; 3], light: [f32; 15]) {
-    //     let c = vec![0.0, 1.0, 1.0, 0.3];
-    //     let vertices = vec![
-    //         a[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], a[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         a[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], b[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3],
-    //         b[0], a[1], b[2], 0.0, 1.0, 0.0, c[0], c[1], c[2], c[3]
-    //     ];
-    //     self.draw_model(&vertices, world, view, proj, view_position, light);
-    // }
-
 }
 
 // Audio ============================================================
