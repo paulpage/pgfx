@@ -6,19 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cgmath = "0.18.0"
-gl = "0.14.0"
-rusttype = "0.9.2"
-stb_image = "0.2.4"
-rodio = { version = "0.17.2", default-features = false, features = ["wav", "vorbis"] }
-pprof = { version = "0.1.0", path = "../pprof" }
-
-[dependencies.sdl2]
-# version = "0.35.2"
-# Using git for now because 0.35.2 was released in February of 2022, and I need the precise scrolling events that have been added since then.
-git = "https://github.com/Rust-SDL2/rust-sdl2"
-rev = "77c1eb48e5e1213d1ba606c8b41c0409fa84734d"
-features = ["unsafe_textures", "bundled", "static-link"]
+macroquad = "0.4.4"
+# pprof = { version = "0.1.0", path = "../pprof" }
 
 [dev-dependencies]
 rand = "0.8.5"
