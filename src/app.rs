@@ -231,6 +231,7 @@ impl<'a> App<'a> {
     }
 
     pub fn present(&mut self) {
+
         self.flush();
         self.window.gl_swap_window();
     }
