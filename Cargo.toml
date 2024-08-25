@@ -10,9 +10,9 @@ gl = "0.14.0"
 rusttype = "0.9.2"
 stb_image = "0.2.4"
 rodio = { version = "0.17.2", default-features = false, features = ["wav", "vorbis"] }
-
-[dependencies.sdl2]
-version = "0.36.0"
+sdl2 = "0.37.0"
+imgui = "0.12.0"
+imgui-glow-renderer = "0.12.0"
 
 [dev-dependencies]
 rand = "0.8.5"

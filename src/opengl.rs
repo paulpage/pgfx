@@ -70,7 +70,16 @@ pub extern "system" fn debug_callback(
     message: *const GLchar,
     _user_param: *mut c_void,
 ) {
-    let msg = unsafe {CStr::from_ptr(message).to_str().unwrap()};
+    let msg = unsafe {
+        let c_str = CStr::from_ptr(message);
+        match c_str.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                // If UTF-8 conversion fails, fall back to lossy conversion
+                String::from_utf8_lossy(c_str.to_bytes()).into_owned()
+            }
+        }
+    };
     if severity != gl::DEBUG_SEVERITY_NOTIFICATION {
         let severity_str = match severity {
             gl::DEBUG_SEVERITY_HIGH => "high",

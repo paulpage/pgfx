@@ -1,16 +1,11 @@
-use sdl2::Sdl;
+use sdl2::{Sdl, EventPump};
 use sdl2::event::{Event, WindowEvent};
 use sdl2::mouse::MouseButton;
 use sdl2::video::{GLProfile, Window, GLContext, SwapInterval};
 use sdl2::keyboard::Mod;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::path::Path;
-
-use std::fs::File;
-use std::io::BufReader;
-use rodio::{Decoder, decoder::LoopedDecoder, OutputStream, OutputStreamHandle, Sink};
-use rodio::source::{Buffered, Source};
+use std::path::{Path, PathBuf};
 
 use std::{ptr, mem};
 use gl::types::*;
@@ -20,10 +15,73 @@ use rusttype::{point, Font, Scale, PositionedGlyph};
 
 use super::types::{Rect, Color, Point};
 use super::opengl::{create_program, debug_callback};
-
+use super::imgui::Imgui;
+use super::sound::{SoundEngine, Sound};
 use std::collections::HashSet;
+
 pub type Scancode = sdl2::keyboard::Scancode;
 pub type Key = sdl2::keyboard::Keycode;
+
+// Builder ============================================================
+
+pub trait App {
+    fn new(engine: &mut Engine) -> Self;
+    fn update(&mut self, engine: &mut Engine);
+}
+
+pub struct AppBuilder<T: App> {
+    title: String,
+    font_path: Option<String>,
+    font_size: f32,
+    enable_ui: bool,
+    resource_path: PathBuf,
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: App> AppBuilder<T> {
+    pub fn font(mut self, path: &str, size: f32) -> Self {
+        self.font_path = Some(path.to_string());
+        self.font_size = size;
+        self
+    }
+
+    pub fn with_ui(mut self) -> Self {
+        self.enable_ui = true;
+        self
+    }
+
+    pub fn resource_path(mut self, path: &str) -> Self {
+        self.resource_path = PathBuf::from(path);
+        self
+    }
+
+    pub fn run(self) -> Result<(), String> {
+        let mut engine = Engine::new(&self.title, self.font_path, self.font_size, &self.resource_path);
+        let mut app = T::new(&mut engine);
+        loop {
+            let mut event_pump = engine.sdl.event_pump().unwrap();
+            engine.ui.prepare_frame(&engine.window, &event_pump);
+            app.update(&mut engine);
+            if engine.should_quit(&mut event_pump) {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn app<T: App>(title: &str) -> AppBuilder<T> {
+    AppBuilder {
+        title: title.to_string(),
+        font_path: None,
+        font_size: 16.0,
+        enable_ui: false,
+        resource_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        _phantom: std::marker::PhantomData,
+    }
+}
+
+// Struct ============================================================
 
 #[derive(PartialEq)]
 #[allow(dead_code)]
@@ -34,7 +92,7 @@ enum DrawType {
     Text,
 }
 
-pub struct App<'a> {
+pub struct Engine<'a> {
     // SDL
     pub sdl: Sdl,
     window: Window,
@@ -84,26 +142,27 @@ pub struct App<'a> {
     pub keys_pressed: HashSet<Key>,
     pub physical_keys_down: HashSet<Scancode>,
     pub physical_keys_pressed: HashSet<Scancode>,
-    pub ctrl_pressed: bool,
-    pub alt_pressed: bool,
-    pub shift_pressed: bool,
+    pub ctrl_down: bool,
+    pub alt_down: bool,
+    pub shift_down: bool,
     pub text_entered: Vec<String>,
 
-    // Audio
-    _stream: OutputStream,
-    _stream_handle: OutputStreamHandle,
-    sinks: Vec<Sink>,
-    next_sink: usize,
+    // Subsystems
+    pub sound: SoundEngine,
+    pub ui: Imgui,
+
+    draw_ui_this_frame: bool,
+    resource_path: PathBuf,
 }
 
-impl<'a> App<'a> {
+impl<'a> Engine<'a> {
 
-    pub fn new(title: &str, font_path: &str, font_size: f32) -> Self {
+    pub fn new(title: &str, font_path: Option<String>, font_size: f32, resource_path: &Path) -> Self {
         let sdl = sdl2::init().unwrap();
         let video_subsys = sdl.video().unwrap();
         let gl_attr = video_subsys.gl_attr();
-        gl_attr.set_context_profile(GLProfile::Core);
         gl_attr.set_context_version(3, 3);
+        gl_attr.set_context_profile(GLProfile::Core);
         let window = video_subsys
             .window(title, 800, 600)
             .position_centered()
@@ -114,6 +173,7 @@ impl<'a> App<'a> {
             .unwrap();
         let _gl_ctx = window.gl_create_context().unwrap();
         gl::load_with(|ptr| video_subsys.gl_get_proc_address(ptr) as *const _);
+        window.gl_make_current(&_gl_ctx).unwrap();
 
         // video_subsys.gl_set_swap_interval(SwapInterval::Immediate);
 
@@ -128,7 +188,11 @@ impl<'a> App<'a> {
         let program_texture = create_program(include_str!("shaders/texture.vert"), include_str!("shaders/texture.frag"));
 
         let font = {
-            let data = std::fs::read(Path::new(font_path)).unwrap();
+            let data = if let Some(path) = font_path {
+                std::fs::read(Path::new(&path)).unwrap()
+            } else {
+                include_bytes!("../res/fonts/vera/Vera.ttf").to_vec()
+            };
             Font::try_from_vec(data).unwrap()
         };
 
@@ -150,11 +214,8 @@ impl<'a> App<'a> {
             );
         }
 
-        let (_stream, _stream_handle) = OutputStream::try_default().unwrap();
-        let mut sinks = Vec::new();
-        for _ in 0..8 {
-            sinks.push(Sink::try_new(&_stream_handle).unwrap());
-        }
+        let ui = Imgui::new(&window);
+        let sound = SoundEngine::new();
 
         Self {
             sdl,
@@ -187,9 +248,9 @@ impl<'a> App<'a> {
             keys_pressed: HashSet::new(),
             physical_keys_down: HashSet::new(),
             physical_keys_pressed: HashSet::new(),
-            ctrl_pressed: false,
-            alt_pressed: false,
-            shift_pressed: false,
+            ctrl_down: false,
+            alt_down: false,
+            shift_down: false,
             text_entered: Vec::new(),
             tri_buffer,
             text_buffer,
@@ -198,10 +259,10 @@ impl<'a> App<'a> {
             tex_vertices: Vec::new(),
             text_entries: Vec::new(),
             last_draw_type: DrawType::Any,
-            _stream,
-            _stream_handle,
-            sinks,
-            next_sink: 0,
+            sound,
+            ui,
+            draw_ui_this_frame: false,
+            resource_path: PathBuf::from(resource_path),
         }
     }
 
@@ -230,12 +291,6 @@ impl<'a> App<'a> {
         }
     }
 
-    pub fn present(&mut self) {
-
-        self.flush();
-        self.window.gl_swap_window();
-    }
-
     fn flush(&mut self) {
         match self.last_draw_type {
             DrawType::Triangles => self.flush_triangles(),
@@ -256,9 +311,19 @@ impl<'a> App<'a> {
 
 // Input ============================================================
 
-impl<'a> App<'a> {
+impl<'a> Engine<'a> {
 
-    pub fn should_quit(&mut self) -> bool {
+    pub fn should_quit(&mut self, event_pump: &mut EventPump) -> bool {
+
+        if self.draw_ui_this_frame {
+            self.ui.render();
+            self.draw_ui_this_frame = false;
+        }
+
+        self.flush();
+        self.window.gl_swap_window();
+
+        // ========================================
 
         let mut should_quit = self.quit_requested;
         self.has_events = false;
@@ -277,7 +342,10 @@ impl<'a> App<'a> {
         self.physical_keys_pressed.clear();
         self.keys_pressed.clear();
 
-        for event in self.sdl.event_pump().unwrap().poll_iter() {
+        for event in event_pump.poll_iter() {
+
+            self.ui.handle_event(&event);
+
             self.has_events = true;
             match event {
                 Event::Quit { .. } => should_quit = true,
@@ -331,13 +399,13 @@ impl<'a> App<'a> {
                 }
                 Event::KeyDown { keycode, scancode, keymod, .. } => {
                     if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
-                        self.ctrl_pressed = true;
+                        self.ctrl_down = true;
                     }
                     if keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD) {
-                        self.alt_pressed = true;
+                        self.alt_down = true;
                     }
                     if keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD) {
-                        self.shift_pressed = true;
+                        self.shift_down = true;
                     }
                     if let Some(scancode) = scancode {
                         self.physical_keys_down.insert(scancode);
@@ -350,13 +418,13 @@ impl<'a> App<'a> {
                 }
                 Event::KeyUp { keycode, scancode, keymod, .. } => {
                     if !(keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD)) {
-                        self.ctrl_pressed = false;
+                        self.ctrl_down = false;
                     }
                     if !(keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD)) {
-                        self.alt_pressed = false;
+                        self.alt_down = false;
                     }
                     if !(keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD)) {
-                        self.shift_pressed = false;
+                        self.shift_down = false;
                     }
                     if let Some(scancode) = scancode {
                         self.physical_keys_down.remove(&scancode);
@@ -399,17 +467,24 @@ impl<'a> App<'a> {
 
     pub fn get_key_string(&self, key: &Key) -> String {
         let mut kstr = String::new();
-        if self.ctrl_pressed {
+        if self.ctrl_down {
             kstr.push_str("c-");
         }
-        if self.alt_pressed {
+        if self.alt_down {
             kstr.push_str("a-");
         }
-        if self.shift_pressed {
+        if self.shift_down {
             kstr.push_str("s-");
         }
         kstr.push_str(&key.to_string().to_ascii_lowercase());
         kstr
+    }
+
+    // UI
+
+    pub fn ui(&mut self) -> &mut imgui::Ui {
+        self.draw_ui_this_frame = true;
+        self.ui.new_frame()
     }
 }
 
@@ -459,7 +534,7 @@ fn get_rect_vertices(rect: Rect, origin: Point, rotation: f32, window_width: f32
     ]
 }
 
-impl<'a> App<'a> {
+impl<'a> Engine<'a> {
 
     fn flush_triangles(&mut self) {
         let mut vao_2d = 0;
@@ -577,7 +652,36 @@ impl Texture {
     }
 }
 
-impl<'a> App<'a> {
+impl<'a> Engine<'a> {
+
+    pub fn res_path(&self, path: &str) -> String {
+        self.resource_path.join(path).to_str().expect("Invalid UTF-8 in path").to_string()
+    }
+
+    pub fn load_texture(&self, path: &str) -> Result<Texture, String> {
+        Texture::from_file(&self.res_path(path))
+    }
+
+    pub fn load_sound(&mut self, path: &str) -> Sound {
+        self.sound.load(&self.res_path(path))
+    }
+
+    pub fn play_sound(&mut self, sound: &Sound) {
+        self.sound.play(sound)
+    }
+
+    pub fn play_music(&mut self, sound: &Sound) {
+        self.sound.play_music(sound)
+    }
+
+    pub fn pause_music(&mut self) {
+        self.sound.pause_music()
+    }
+
+    pub fn resume_music(&mut self) {
+        self.sound.resume_music()
+    }
+
 
     pub fn flush_textures(&mut self, texture_id: u32) {
         let (mut vao, mut vbo) = (0, 0);
@@ -662,7 +766,7 @@ struct FontCacheEntry {
     height: i32,
 }
 
-impl<'a> App<'a> {
+impl<'a> Engine<'a> {
 
     pub fn flush_text(&mut self) {
 
@@ -842,38 +946,9 @@ impl<'a> App<'a> {
         };
         self.font_size = size;
     }
-}
 
-// Audio ============================================================
-
-pub type Sound = Buffered<LoopedDecoder<BufReader<File>>>;
-
-impl<'a> App<'a> {
-    pub fn load_sound(&mut self, path: &str) -> Sound {
-        let f = BufReader::new(File::open(path).unwrap());
-        Decoder::new_looped(f).unwrap().buffered()
+    pub fn set_resource_path(&mut self, path: &str) {
+        self.resource_path = PathBuf::from(path);
     }
 
-    pub fn play_music(&mut self, sound: &Sound) {
-        self.sinks[0].clear();
-        self.sinks[0].append(sound.clone().repeat_infinite());
-    }
-
-    pub fn pause_music(&mut self) {
-        self.sinks[0].pause();
-    }
-
-    pub fn resume_music(&mut self) {
-        self.sinks[0].play();
-    }
-
-    pub fn play_sound(&mut self, sound: &Sound) {
-        // TODO detect free sinks
-        let sink_idx = self.next_sink;
-        self.next_sink += 1;
-        if self.next_sink == 8 {
-            self.next_sink = 1;
-        }
-        self.sinks[sink_idx].append(sound.clone());
-    }
 }
