@@ -1,4 +1,4 @@
-use sdl2::{Sdl, EventPump};
+use sdl2::Sdl;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::mouse::MouseButton;
 use sdl2::video::{GLProfile, Window, GLContext, SwapInterval};
@@ -31,40 +31,15 @@ pub trait App {
 
 pub struct AppBuilder<T: App> {
     title: String,
-    font_path: Option<String>,
-    font_size: f32,
-    enable_ui: bool,
-    resource_path: PathBuf,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: App> AppBuilder<T> {
-    pub fn font(mut self, path: &str, size: f32) -> Self {
-        self.font_path = Some(path.to_string());
-        self.font_size = size;
-        self
-    }
-
-    pub fn with_ui(mut self) -> Self {
-        self.enable_ui = true;
-        self
-    }
-
-    pub fn resource_path(mut self, path: &str) -> Self {
-        self.resource_path = PathBuf::from(path);
-        self
-    }
-
     pub fn run(self) -> Result<(), String> {
-        let mut engine = Engine::new(&self.title, self.font_path, self.font_size, &self.resource_path);
+        let mut engine = Engine::new(&self.title);
         let mut app = T::new(&mut engine);
-        loop {
-            let mut event_pump = engine.sdl.event_pump().unwrap();
-            engine.ui.prepare_frame(&engine.window, &event_pump);
+        while engine.update() {
             app.update(&mut engine);
-            if engine.should_quit(&mut event_pump) {
-                break;
-            }
         }
         Ok(())
     }
@@ -73,10 +48,6 @@ impl<T: App> AppBuilder<T> {
 pub fn app<T: App>(title: &str) -> AppBuilder<T> {
     AppBuilder {
         title: title.to_string(),
-        font_path: None,
-        font_size: 16.0,
-        enable_ui: false,
-        resource_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
         _phantom: std::marker::PhantomData,
     }
 }
@@ -157,7 +128,8 @@ pub struct Engine<'a> {
 
 impl<'a> Engine<'a> {
 
-    pub fn new(title: &str, font_path: Option<String>, font_size: f32, resource_path: &Path) -> Self {
+    pub fn new(title: &str) -> Self {
+        // SDL/Graphics
         let sdl = sdl2::init().unwrap();
         let video_subsys = sdl.video().unwrap();
         let gl_attr = video_subsys.gl_attr();
@@ -187,17 +159,6 @@ impl<'a> Engine<'a> {
         let program_text = create_program(include_str!("shaders/text.vert"), include_str!("shaders/text.frag"));
         let program_texture = create_program(include_str!("shaders/texture.vert"), include_str!("shaders/texture.frag"));
 
-        let font = {
-            let data = if let Some(path) = font_path {
-                std::fs::read(Path::new(&path)).unwrap()
-            } else {
-                include_bytes!("../res/fonts/vera/Vera.ttf").to_vec()
-            };
-            Font::try_from_vec(data).unwrap()
-        };
-
-        let char_width = font.glyph('o').scaled(Scale::uniform(font_size)).h_metrics().advance_width;
-
         let mut tri_buffer = 0;
         let mut text_buffer = 0;
         unsafe {
@@ -214,8 +175,18 @@ impl<'a> Engine<'a> {
             );
         }
 
+        // Text
+        let font = Font::try_from_vec(include_bytes!("../res/fonts/vera/Vera.ttf").to_vec()).unwrap();
+        let font_size = 32.0;
+        let char_width = font.glyph('o').scaled(Scale::uniform(font_size)).h_metrics().advance_width;
+
+
+        // Subsystems
         let ui = Imgui::new(&window);
         let sound = SoundEngine::new();
+
+        // Resources
+        let resource_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         Self {
             sdl,
@@ -262,7 +233,7 @@ impl<'a> Engine<'a> {
             sound,
             ui,
             draw_ui_this_frame: false,
-            resource_path: PathBuf::from(resource_path),
+            resource_path,
         }
     }
 
@@ -313,7 +284,8 @@ impl<'a> Engine<'a> {
 
 impl<'a> Engine<'a> {
 
-    pub fn should_quit(&mut self, event_pump: &mut EventPump) -> bool {
+    pub fn update(&mut self) -> bool {
+        let mut event_pump = self.sdl.event_pump().unwrap();
 
         if self.draw_ui_this_frame {
             self.ui.render();
@@ -442,7 +414,7 @@ impl<'a> Engine<'a> {
         }
         // TODO
 
-        should_quit
+        !should_quit
     }
 
     pub fn quit(&mut self) {
@@ -484,6 +456,8 @@ impl<'a> Engine<'a> {
 
     pub fn ui(&mut self) -> &mut imgui::Ui {
         self.draw_ui_this_frame = true;
+        let event_pump = self.sdl.event_pump().unwrap();
+        self.ui.prepare_frame(&self.window, &event_pump);
         self.ui.new_frame()
     }
 }
@@ -939,16 +913,17 @@ impl<'a> Engine<'a> {
         // length
     }
 
-    pub fn set_font(&mut self, path: &Path, size: f32) {
+    pub fn set_font(&mut self, path: impl AsRef<Path>, size: f32) {
         self.font = {
             let data = std::fs::read(path).unwrap();
             Font::try_from_vec(data).unwrap()
         };
         self.font_size = size;
+        self.char_width = self.font.glyph('o').scaled(Scale::uniform(self.font_size)).h_metrics().advance_width;
     }
 
-    pub fn set_resource_path(&mut self, path: &str) {
-        self.resource_path = PathBuf::from(path);
+    pub fn set_resource_path(&mut self, path: impl AsRef<Path>) {
+        self.resource_path = PathBuf::from(path.as_ref());
     }
 
 }

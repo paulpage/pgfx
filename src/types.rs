@@ -42,6 +42,13 @@ pub struct Rect {
     pub height: f32,
 }
 
+#[macro_export]
+macro_rules! rect(
+    ($x:expr, $y:expr, $w:expr, $h:expr) => (
+        Rect::new($x as f32, $y as f32, $w as f32, $h as f32)
+    )
+);
+
 impl Rect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {

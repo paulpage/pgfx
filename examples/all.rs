@@ -1,85 +1,60 @@
-use pgfx::{app, App, Engine, Texture, Key, Rect, Color, Point, Sound};
+use pgfx::{Engine, Texture, Key, Rect, Color, Point, Sound};
 
-use std::time::{Duration, Instant};
 use rand::Rng;
 
-struct Example {
-    rects: Vec<Rect>,
-    colors: Vec<Color>,
-    rotations: Vec<f32>,
-    background_color: Color,
-    scroll_offset: f32,
-    tex_bird: Texture,
-    pos: Point,
-    drag_offset: Point,
-    rotation: f32,
-    last_mouse: Point,
-    mouse_delta: Point,
-    music: Sound,
-    sound: Sound,
-}
+fn main() {
+    let mut rng = rand::thread_rng();
+    let mut g = Engine::new("Example");
 
-impl App for Example {
-    fn new(g: &mut Engine) -> Self {
+    let background_color = Color::new(0, 100, 0);
+    let rect_count = 1000;
 
-        let rect_count = 1000;
-        let mut rng = rand::thread_rng();
-
-        let mut rects = vec![Rect::new(0.0, 0.0, 0.0, 0.0); rect_count];
-        for i in 0..rect_count {
-            rects[i] = Rect::new(rng.gen_range(1..600) as f32, rng.gen_range(1..800) as f32, rng.gen_range(10..30) as f32, rng.gen_range(10..30) as f32);
-        }
-
-
-        let mut colors = vec![Color::BLACK; rect_count];
-        for i in 0..rect_count {
-            colors[i] = Color::new(rng.gen_range(0..255), rng.gen_range(0..255), rng.gen_range(0..255));
-        }
-
-        let rotations = vec![0.0; rect_count];
-
-        let music = g.load_sound("res/music/sample.ogg");
-        g.play_music(&music);
-
-        Self {
-            rects,
-            colors,
-            rotations,
-            background_color: Color::new(0, 100, 0),
-            scroll_offset: 0.0,
-            tex_bird: g.load_texture("res/textures/bird.png").unwrap(),
-            pos: Point::new(200.0, 200.0),
-            drag_offset: Point::ZERO,
-            rotation: 0.0,
-            last_mouse: Point::ZERO,
-            mouse_delta: Point::ZERO,
-            music,
-            sound: g.load_sound("res/sounds/tweet.ogg"),
-        }
+    let mut rects = vec![Rect::new(0.0, 0.0, 0.0, 0.0); rect_count];
+    for i in 0..rect_count {
+        rects[i] = Rect::new(rng.gen_range(1..600) as f32, rng.gen_range(1..800) as f32, rng.gen_range(10..30) as f32, rng.gen_range(10..30) as f32);
     }
 
-    fn update(&mut self, g: &mut Engine) {
-        let mut ui = g.ui();
+    let mut colors = vec![Color::BLACK; rect_count];
+    for i in 0..rect_count {
+        colors[i] = Color::new(rng.gen_range(0..255), rng.gen_range(0..255), rng.gen_range(0..255));
+    }
+
+    let mut rotations = vec![0.0; rect_count];
+
+    let music = g.load_sound("res/music/sample.ogg");
+    let tex_bird = g.load_texture("res/textures/bird.png").unwrap();
+    let sound = g.load_sound("res/sounds/tweet.ogg");
+
+    // State
+    let mut scroll_offset = 0.0;
+    //let mut drag_offset = Point::ZERO;
+    let mut rotation = 0.0;
+    //let mut last_mouse = Point::ZERO;
+    //let mut mouse_delta = Point::ZERO;
+
+    g.play_music(&music);
+
+    while g.update() {
+        let ui = g.ui();
 
         ui.show_demo_window(&mut true);
 
-        self.mouse_delta = g.mouse - self.last_mouse;
-        self.last_mouse = g.mouse;
+        //mouse_delta = g.mouse - last_mouse;
+        //last_mouse = g.mouse;
 
-        for i in 0..self.rects.len() {
-            self.rotations[i] = g.mouse.x / 600.0;
+        for i in 0..rects.len() {
+            rotations[i] = g.mouse.x / 600.0;
         }
 
-        self.pos = g.mouse;
-        self.scroll_offset += g.scroll.y;
+        scroll_offset += g.scroll.y;
 
-        g.clear(self.background_color);
+        g.clear(background_color);
 
         if g.mouse_left_down {
-            self.rotation -= 0.05;
+            rotation -= 0.05;
         }
         if g.mouse_right_down {
-            self.rotation += 0.05;
+            rotation += 0.05;
         }
         if g.mouse_left_pressed || g.mouse_right_pressed {
             g.resume_music();
@@ -89,28 +64,25 @@ impl App for Example {
         }
 
         if g.is_key_pressed(Key::Space) {
-            g.play_sound(&self.sound);
+            g.play_sound(&sound);
             println!("space pressed");
         }
 
-        for i in 0..self.rects.len() {
-            g.draw_rotated_rect(self.rects[i], self.colors[i], Point::new(self.rects[i].width / 2.0, self.rects[i].height / 2.0), self.rotations[i]);
+        if g.is_key_pressed(Key::Q) {
+            g.quit();
+        }
+
+        for i in 0..rects.len() {
+            g.draw_rotated_rect(rects[i], colors[i], Point::new(rects[i].width / 2.0, rects[i].height / 2.0), rotations[i]);
         }
 
         g.draw_rotated_texture(
-            &self.tex_bird,
-            Rect::new(0.0, 0.0, self.tex_bird.width, self.tex_bird.height),
-            Rect::new(self.pos.x, self.pos.y, self.tex_bird.width * 4.0, self.tex_bird.height * 4.0),
-            Point::new(self.tex_bird.width * 2.0, self.tex_bird.height * 2.0),
-            self.rotation,
+            &tex_bird,
+            Rect::new(0.0, 0.0, tex_bird.width, tex_bird.height),
+            Rect::new(g.mouse.x, g.mouse.y, tex_bird.width * 4.0, tex_bird.height * 4.0),
+            Point::new(tex_bird.width * 2.0, tex_bird.height * 2.0),
+            rotation,
         );
-        g.draw_text("Hello World!", 30.0, 30.0 + self.scroll_offset, 20.0, Color::new(0, 0, 100));
+        g.draw_text("Hello World!", 30.0, 30.0 + scroll_offset * 10.0, 20.0, Color::new(0, 0, 100));
     }
-}
-
-fn main() {
-    pgfx::app::<Example>("Rect example")
-        .font("res/fonts/vera/Vera.ttf", 32.0)
-        .with_ui()
-        .run();
 }

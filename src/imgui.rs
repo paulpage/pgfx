@@ -14,7 +14,7 @@ impl Imgui {
     pub fn new(window: &Window) -> Self {
         let mut imgui = imgui::Context::create();
         imgui.set_ini_filename(None);
-        let mut imgui_sdl2 = imgui_sdl2_support::SdlPlatform::init(&mut imgui);
+        let imgui_sdl2 = imgui_sdl2_support::SdlPlatform::init(&mut imgui);
         let glow_context = unsafe {
             imgui_glow_renderer::glow::Context::from_loader_function(|s| window.subsystem().gl_get_proc_address(s) as _)
         };
@@ -37,7 +37,7 @@ impl Imgui {
     }
 
     pub fn render(&mut self) {
-        self.imgui_renderer.render(self.imgui.render());
+        self.imgui_renderer.render(self.imgui.render()).unwrap();
     }
 
     pub fn new_frame(&mut self) -> &mut imgui::Ui {
