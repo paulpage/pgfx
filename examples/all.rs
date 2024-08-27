@@ -21,16 +21,13 @@ fn main() {
 
     let mut rotations = vec![0.0; rect_count];
 
-    let music = g.load_sound("res/music/sample.ogg");
-    let tex_bird = g.load_texture("res/textures/bird.png").unwrap();
-    let sound = g.load_sound("res/sounds/tweet.ogg");
+    let music = g.load_sound_file("res/music/sample.ogg");
+    let tex_bird = g.load_texture_file("res/textures/bird.png").unwrap();
+    let sound = g.load_sound_file("res/sounds/tweet.ogg");
 
     // State
     let mut scroll_offset = 0.0;
-    //let mut drag_offset = Point::ZERO;
     let mut rotation = 0.0;
-    //let mut last_mouse = Point::ZERO;
-    //let mut mouse_delta = Point::ZERO;
 
     g.play_music(&music);
 
@@ -38,9 +35,6 @@ fn main() {
         let ui = g.ui();
 
         ui.show_demo_window(&mut true);
-
-        //mouse_delta = g.mouse - last_mouse;
-        //last_mouse = g.mouse;
 
         for i in 0..rects.len() {
             rotations[i] = g.mouse.x / 600.0;

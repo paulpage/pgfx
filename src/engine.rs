@@ -123,7 +123,7 @@ pub struct Engine<'a> {
     pub ui: Imgui,
 
     draw_ui_this_frame: bool,
-    resource_path: PathBuf,
+    pub resource_path: PathBuf,
 }
 
 impl<'a> Engine<'a> {
@@ -588,7 +588,6 @@ pub struct Texture {
 impl Texture {
 
     pub fn new(width: usize, height: usize, data: Vec<u8>) -> Self {
-        // Load the texture from the buffer
         let texture_id = unsafe {
             let mut texture_id: u32 = 0;
             gl::ActiveTexture(gl::TEXTURE0);
@@ -618,7 +617,14 @@ impl Texture {
         }
     }
 
-    pub fn from_file(path: &str) -> Result<Self, String> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        match stb_image::image::load_from_memory(bytes) {
+            LoadResult::ImageU8(image) => Ok(Self::new(image.width, image.height, image.data)),
+            _ => Err("Failed to load texture".to_string()),
+        }
+    }
+
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, String> {
         match stb_image::image::load(path) {
             LoadResult::ImageU8(image) => Ok(Self::new(image.width, image.height, image.data)),
             _ => Err("Failed to load texture".to_string()),
@@ -628,16 +634,25 @@ impl Texture {
 
 impl<'a> Engine<'a> {
 
-    pub fn res_path(&self, path: &str) -> String {
-        self.resource_path.join(path).to_str().expect("Invalid UTF-8 in path").to_string()
+    pub fn res_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        self.resource_path.join(path)
+        //self.resource_path.join(path).to_str().expect("Invalid UTF-8 in path").to_string()
     }
 
-    pub fn load_texture(&self, path: &str) -> Result<Texture, String> {
+    pub fn load_texture(&self, bytes: &[u8]) -> Result<Texture, String> {
+        Texture::from_bytes(bytes)
+    }
+
+    pub fn load_texture_file(&self, path: impl AsRef<Path>) -> Result<Texture, String> {
         Texture::from_file(&self.res_path(path))
     }
 
-    pub fn load_sound(&mut self, path: &str) -> Sound {
-        self.sound.load(&self.res_path(path))
+    pub fn load_sound(&mut self, bytes: &[u8]) -> Sound {
+        Sound::from_bytes(bytes)
+    }
+
+    pub fn load_sound_file(&mut self, path: impl AsRef<Path>) -> Sound {
+        Sound::from_file(path)
     }
 
     pub fn play_sound(&mut self, sound: &Sound) {
@@ -655,7 +670,6 @@ impl<'a> Engine<'a> {
     pub fn resume_music(&mut self) {
         self.sound.resume_music()
     }
-
 
     pub fn flush_textures(&mut self, texture_id: u32) {
         let (mut vao, mut vbo) = (0, 0);
